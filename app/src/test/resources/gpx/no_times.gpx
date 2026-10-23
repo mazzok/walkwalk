@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="komoot" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Planned tour</name>
+    <trkseg>
+      <trkpt lat="47.1" lon="11.2"><ele>900</ele></trkpt>
+      <trkpt lat="47.1005" lon="11.2005"><ele>910</ele></trkpt>
+      <trkpt lat="47.101" lon="11.201"/>
+    </trkseg>
+  </trk>
+</gpx>
