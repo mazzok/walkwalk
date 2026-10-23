@@ -5,6 +5,7 @@ import com.walkwalk.data.AltitudeCorrector
 import com.walkwalk.data.HikeRepository
 import com.walkwalk.data.OpenMeteoElevationApi
 import com.walkwalk.data.WalkwalkDb
+import com.walkwalk.map.MapSetup
 import com.walkwalk.recording.BaroPressureSource
 import com.walkwalk.recording.GpsLocationSource
 import com.walkwalk.recording.RecordingController
@@ -29,6 +30,11 @@ class WalkwalkApp : Application() {
 
     val recording: RecordingController by lazy {
         RecordingController(repository, GpsLocationSource(this), BaroPressureSource(this), appScope) { System.currentTimeMillis() }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        MapSetup.init(this, httpClient)
     }
 
     /** Ends the hike (the user pressed Stop) and corrects its altitude in the background when online. */
