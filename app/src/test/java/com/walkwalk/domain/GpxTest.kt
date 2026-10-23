@@ -31,6 +31,14 @@ class GpxTest {
     }
 
     @Test
+    fun coordinatesNearGreenwichAreWrittenAsDecimals() {
+        val out = ByteArrayOutputStream()
+        GpxWriter.write("London", listOf(p(0, 51.5, -0.0005)), out)
+        val xml = out.toString(Charsets.UTF_8.name())
+        assertTrue(xml, xml.contains("lon=\"-0.0005") && !xml.contains("E-"))
+    }
+
+    @Test
     fun parsesGarminFileWithExtensions() {
         val g = GpxParser.parse(res("gpx/garmin.gpx"))
         assertTrue(g.hasTimes)

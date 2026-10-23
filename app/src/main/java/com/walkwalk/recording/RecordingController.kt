@@ -1,5 +1,6 @@
 package com.walkwalk.recording
 
+import com.walkwalk.data.HikeEntity
 import com.walkwalk.data.HikeRepository
 import com.walkwalk.data.HikeStatus
 import com.walkwalk.domain.Altitude
@@ -7,6 +8,8 @@ import com.walkwalk.domain.Geo
 import com.walkwalk.domain.TrackPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -54,11 +57,18 @@ class RecordingController(
 
     private val mutex = Mutex()
     private var collectJob: Job? = null
+    @Volatile private var generation = 0
     private var segment = 0
     private val live = LiveStats()
 
     suspend fun start(): Long = mutex.withLock {
         _state.value?.let { return it.hikeId }
+        // an unfinished hike is never orphaned: Start continues it (it ends only with Stop)
+        repo.activeHike()?.let { hike ->
+            restoreLocked(hike)
+            if (hike.status == HikeStatus.PAUSED) resumeLocked()
+            return hike.id
+        }
         val id = repo.startHike(clock())
         segment = 0
         live.reset(emptyList())
@@ -75,7 +85,9 @@ class RecordingController(
         publish(s.hikeId, HikeStatus.PAUSED)
     }
 
-    suspend fun resume() = mutex.withLock {
+    suspend fun resume() = mutex.withLock { resumeLocked() }
+
+    private suspend fun resumeLocked() {
         val s = _state.value ?: return
         if (s.status != HikeStatus.PAUSED) return
         segment = (repo.lastSegment(s.hikeId) ?: -1) + 1
@@ -88,8 +100,12 @@ class RecordingController(
     suspend fun stop(): Long? = mutex.withLock {
         val s = _state.value ?: return null
         stopCollecting()
-        repo.finish(s.hikeId, clock())
-        _state.value = null
+        // finishing must not be cut short by the caller going away
+        try {
+            withContext(NonCancellable) { repo.finish(s.hikeId, clock()) }
+        } finally {
+            _state.value = null
+        }
         s.hikeId
     }
 
@@ -97,11 +113,15 @@ class RecordingController(
     suspend fun restoreActive(): Boolean = mutex.withLock {
         if (_state.value != null) return true
         val hike = repo.activeHike() ?: return false
+        restoreLocked(hike)
+        true
+    }
+
+    private suspend fun restoreLocked(hike: HikeEntity) {
         live.reset(repo.points(hike.id))
         segment = (repo.lastSegment(hike.id) ?: -1) + 1
         publish(hike.id, hike.status)
         if (hike.status == HikeStatus.RECORDING) collect(hike.id)
-        true
     }
 
     /** Stops GPS without touching the hike, e.g. when the system destroys the service. */
@@ -113,18 +133,22 @@ class RecordingController(
     private fun collect(hikeId: Long) {
         stopCollecting()
         pressure.start()
+        val gen = ++generation
         collectJob = scope.launch {
-            location.fixes().collect { fix -> onFix(hikeId, fix) }
+            location.fixes().collect { fix -> mutex.withLock { onFixLocked(gen, hikeId, fix) } }
         }
     }
 
     private fun stopCollecting() {
+        generation++
         collectJob?.cancel()
         collectJob = null
         pressure.stop()
     }
 
-    private suspend fun onFix(hikeId: Long, fix: Fix) {
+    private suspend fun onFixLocked(gen: Int, hikeId: Long, fix: Fix) {
+        // a fix from a collector that was paused/stopped meanwhile is dropped
+        if (gen != generation || _state.value?.status != HikeStatus.RECORDING) return
         val point = TrackPoint(fix.time, fix.lat, fix.lon, fix.mslAltitude, pressure.latestHpa(), fix.accuracy, segment)
         val prev = live.last?.takeIf { it.segment == segment }
         if (!Geo.acceptFix(prev, point)) return
@@ -134,7 +158,10 @@ class RecordingController(
     }
 
     private fun publish(hikeId: Long, status: HikeStatus) {
-        _state.value = LiveState(hikeId, status, live.elapsedMs, live.distanceM, live.altitudeM, live.speedKmh, live.ascentM, live.track)
+        _state.value = LiveState(
+            hikeId, status, live.elapsedMs, live.distanceM, live.altitudeM, live.speedKmh, live.ascentM,
+            live.track.toList(),
+        )
     }
 
     /** Cheap incremental stats for the live screen; the stored hike is recomputed properly on stop. */

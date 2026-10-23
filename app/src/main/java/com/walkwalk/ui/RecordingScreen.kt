@@ -34,6 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.produceState
+import com.walkwalk.data.HikeEntity
+import com.walkwalk.data.HikeRepository
 import com.walkwalk.data.HikeStatus
 import com.walkwalk.map.TopoMap
 import com.walkwalk.recording.RecordingController
@@ -42,9 +45,12 @@ import kotlinx.coroutines.delay
 @Composable
 fun RecordingScreen(
     controller: RecordingController,
+    repo: HikeRepository,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
+    onContinueUnfinished: () -> Unit,
+    onSaveUnfinished: (Long) -> Unit,
 ) {
     val context = LocalContext.current
     val state by controller.state.collectAsState()
@@ -59,7 +65,25 @@ fun RecordingScreen(
 
     val s = state
     if (s == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        // not recording in this process: an unfinished hike means the recording was interrupted
+        val unfinished by produceState<HikeEntity?>(null) { value = repo.activeHike() }
+        Box(Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp), contentAlignment = Alignment.Center) {
+            val hike = unfinished
+            if (hike == null) {
+                CircularProgressIndicator()
+            } else {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Unfinished hike", style = MaterialTheme.typography.titleMedium)
+                        Text("Recording of \"${hike.name}\" was interrupted. Continue recording, or save it as it is?")
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedButton(onClick = { onSaveUnfinished(hike.id) }, modifier = Modifier.weight(1f)) { Text("Save hike") }
+                            Button(onClick = onContinueUnfinished, modifier = Modifier.weight(1f)) { Text("Continue") }
+                        }
+                    }
+                }
+            }
+        }
         return
     }
     val last = s.track.lastOrNull()

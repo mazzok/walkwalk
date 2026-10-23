@@ -72,10 +72,9 @@ class MainActivity : ComponentActivity() {
         val snackbar = remember { SnackbarHostState() }
         val scope = rememberCoroutineScope()
 
-        // An unfinished hike continues until Stop: go straight back to it.
+        // An unfinished hike: show it live if still recording, otherwise the screen offers resume or save.
         LaunchedEffect(Unit) {
-            if (app.repository.activeHike() != null) {
-                RecordingService.send(this@MainActivity, null)
+            if (app.recording.state.value != null || app.repository.activeHike() != null) {
                 nav.navigate(RECORDING) { launchSingleTop = true }
             }
         }
@@ -117,6 +116,7 @@ class MainActivity : ComponentActivity() {
             composable(RECORDING) {
                 RecordingScreen(
                     controller = app.recording,
+                    repo = app.repository,
                     onPause = { RecordingService.send(this@MainActivity, RecordingService.ACTION_PAUSE) },
                     onResume = { RecordingService.send(this@MainActivity, RecordingService.ACTION_RESUME) },
                     onStop = {
@@ -124,6 +124,15 @@ class MainActivity : ComponentActivity() {
                             val id = app.stopRecording()
                             nav.popBackStack(LIST, inclusive = false)
                             if (id != null) nav.navigate("replay/$id")
+                        }
+                    },
+                    // Start continues the unfinished hike rather than creating a new one
+                    onContinueUnfinished = startWithPermissions,
+                    onSaveUnfinished = { id ->
+                        scope.launch {
+                            app.saveUnfinished(id)
+                            nav.popBackStack(LIST, inclusive = false)
+                            nav.navigate("replay/$id")
                         }
                     },
                 )

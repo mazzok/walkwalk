@@ -22,7 +22,7 @@ object GpxWriter {
         points.groupBy { it.segment }.toSortedMap().values.forEach { seg ->
             w.write("    <trkseg>\n")
             for (p in seg) {
-                w.write("""      <trkpt lat="${p.lat}" lon="${p.lon}">""")
+                w.write("""      <trkpt lat="${decimal(p.lat)}" lon="${decimal(p.lon)}">""")
                 (p.altitude ?: p.gpsAltitude)?.let { w.write("<ele>${"%.1f".format(java.util.Locale.ROOT, it)}</ele>") }
                 w.write("<time>${Instant.ofEpochMilli(p.time)}</time></trkpt>\n")
             }

@@ -5,6 +5,9 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+/** Plain decimal degrees (never scientific notation), 7 places ≈ 1 cm; trailing zeros dropped. */
+fun decimal(deg: Double): String = java.math.BigDecimal(deg).setScale(7, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+
 const val MAX_ACCURACY_M = 50f
 const val MAX_WALK_SPEED_MS = 30.0 / 3.6
 

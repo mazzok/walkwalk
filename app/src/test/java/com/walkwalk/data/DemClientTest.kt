@@ -68,7 +68,7 @@ class DemClientTest {
         assertEquals(150, api.elevations(List(150) { 47.0 to 11.0 }).size)
         assertEquals(2, server.requestCount)
         val path = server.takeRequest().path!!
-        assertTrue(path, path.startsWith("/v1/elevation?latitude=47.0,"))
+        assertTrue(path, path.startsWith("/v1/elevation?latitude=47,"))
     }
 
     @Test
@@ -98,6 +98,26 @@ class DemClientTest {
         assertFalse(AltitudeCorrector(failingApi, repo).correct(id))
         assertFalse(repo.hike(id)!!.demCorrected)
         assertEquals(1000.0, repo.points(id).first().altitude!!, 0.01)
+    }
+
+    @Test
+    fun hikeDeletedDuringRequestIsSkipped() = runTest {
+        val id = recordedHikeAt1000()
+        val deletingApi = object : ElevationApi {
+            override suspend fun elevations(coords: List<Pair<Double, Double>>): List<Double> {
+                repo.delete(id)
+                return coords.map { 1040.0 }
+            }
+        }
+        assertFalse(AltitudeCorrector(deletingApi, repo).correct(id))
+    }
+
+    @Test
+    fun coordinatesNearGreenwichAreNotScientific() = runTest {
+        server.enqueue(json(listOf(10.0)))
+        OpenMeteoElevationApi(OkHttpClient(), server.url("/").toString()).elevations(listOf(51.5 to -0.0005))
+        val path = server.takeRequest().path!!
+        assertTrue(path, path.contains("longitude=-0.0005") && !path.contains("E-"))
     }
 
     @Test

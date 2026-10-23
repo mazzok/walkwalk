@@ -1,5 +1,6 @@
 package com.walkwalk.data
 
+import com.walkwalk.domain.decimal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -23,8 +24,8 @@ class OpenMeteoElevationApi(
     }
 
     private fun fetch(batch: List<Pair<Double, Double>>): List<Double> {
-        val url = baseUrl.trimEnd('/') + "/v1/elevation?latitude=" + batch.joinToString(",") { it.first.toString() } +
-            "&longitude=" + batch.joinToString(",") { it.second.toString() }
+        val url = baseUrl.trimEnd('/') + "/v1/elevation?latitude=" + batch.joinToString(",") { decimal(it.first) } +
+            "&longitude=" + batch.joinToString(",") { decimal(it.second) }
         client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
             if (!resp.isSuccessful) throw IOException("elevation API HTTP ${resp.code}")
             val body = resp.body?.string() ?: throw IOException("empty elevation response")
@@ -64,7 +65,7 @@ class AltitudeCorrector(private val api: ElevationApi, private val repo: HikeRep
         } catch (e: IOException) {
             return false
         }
-        repo.setCorrectedAltitudes(hikeId, corrected)
+        if (!repo.setCorrectedAltitudes(hikeId, corrected)) return false
         repo.recompute(hikeId)
         return true
     }

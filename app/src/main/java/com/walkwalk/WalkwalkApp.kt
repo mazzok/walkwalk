@@ -9,14 +9,20 @@ import com.walkwalk.map.MapSetup
 import com.walkwalk.recording.BaroPressureSource
 import com.walkwalk.recording.GpsLocationSource
 import com.walkwalk.recording.RecordingController
+import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
 class WalkwalkApp : Application() {
-    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // a failing background job (e.g. DEM correction) must never take the recording process down with it
+    val appScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e -> Log.e("walkwalk", "background job failed", e) },
+    )
 
     val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -39,9 +45,20 @@ class WalkwalkApp : Application() {
 
     /** Ends the hike (the user pressed Stop) and corrects its altitude in the background when online. */
     suspend fun stopRecording(): Long? {
-        val id = recording.stop() ?: return null
+        // runs in the app scope so a screen going away mid-stop can't leave a half-finished hike
+        val id = appScope.async { recording.stop() }.await() ?: return null
         appScope.launch { corrector.correct(id) }
         return id
+    }
+
+    /** Saves an unfinished hike whose recording could not be continued (the resume-or-save offer). */
+    suspend fun saveUnfinished(hikeId: Long): Long {
+        appScope.async {
+            val end = repository.points(hikeId).lastOrNull()?.time ?: System.currentTimeMillis()
+            repository.finish(hikeId, end)
+        }.await()
+        appScope.launch { corrector.correct(hikeId) }
+        return hikeId
     }
 
     companion object {

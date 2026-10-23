@@ -34,10 +34,10 @@ class HikeRepository(private val db: WalkwalkDb) {
     suspend fun stops(hikeId: Long): List<Stop> = dao.stops(hikeId).map { it.toStop() }
 
     /** Fuses altitude from the raw readings, detects stops, caches stats and marks the hike finished. */
-    suspend fun finish(hikeId: Long, now: Long) {
+    suspend fun finish(hikeId: Long, now: Long) = db.withTransaction {
         fuseAltitudes(hikeId)
         recompute(hikeId)
-        val hike = dao.hike(hikeId) ?: return
+        val hike = dao.hike(hikeId) ?: return@withTransaction
         dao.updateHike(hike.copy(status = HikeStatus.FINISHED, endTime = now))
     }
 
@@ -51,11 +51,14 @@ class HikeRepository(private val db: WalkwalkDb) {
         dao.updateHike(hike.withStats(Stats.compute(pts, stops)))
     }
 
-    suspend fun setCorrectedAltitudes(hikeId: Long, altitudes: List<Double>) = db.withTransaction {
+    /** Returns false (and changes nothing) if the hike was deleted or changed since the altitudes were computed. */
+    suspend fun setCorrectedAltitudes(hikeId: Long, altitudes: List<Double>): Boolean = db.withTransaction {
+        val hike = dao.hike(hikeId) ?: return@withTransaction false
         val entities = dao.points(hikeId)
-        require(entities.size == altitudes.size) { "altitude count ${altitudes.size} != point count ${entities.size}" }
+        if (entities.size != altitudes.size) return@withTransaction false
         entities.forEachIndexed { i, e -> dao.setAltitude(e.id, altitudes[i]) }
-        dao.hike(hikeId)?.let { dao.updateHike(it.copy(demCorrected = true)) }
+        dao.updateHike(hike.copy(demCorrected = true))
+        true
     }
 
     suspend fun delete(hikeId: Long) = db.withTransaction {

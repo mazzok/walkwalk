@@ -132,6 +132,28 @@ class RecordingControllerTest {
     }
 
     @Test
+    fun startWithUnfinishedHikeContinuesItInsteadOfOrphaningIt() = runTest {
+        val ctl = newController()
+        val id = ctl.start(); runCurrent()
+        ctl.detach(); runCurrent()
+        val ctl2 = newController()
+        assertEquals(id, ctl2.start()); runCurrent()
+        assertEquals(1, repo.finishedHikes().size + 1) // still exactly one hike: none finished, one active
+        assertEquals(id, repo.activeHike()!!.id)
+    }
+
+    @Test
+    fun publishedTrackIsASnapshot() = runTest {
+        val ctl = newController()
+        ctl.start(); runCurrent()
+        fakeGps.emit(fix(0)); runCurrent()
+        val first = ctl.state.value!!
+        fakeGps.emit(fix(2000)); runCurrent()
+        assertEquals(1, first.track.size)
+        assertEquals(2, ctl.state.value!!.track.size)
+    }
+
+    @Test
     fun pressureStoredWithFix() = runTest {
         fakeBaro.value = 900.0
         val ctl = newController()

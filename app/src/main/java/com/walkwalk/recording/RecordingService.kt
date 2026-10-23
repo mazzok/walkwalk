@@ -31,9 +31,9 @@ class RecordingService : LifecycleService() {
         try {
             startForeground(NOTIFICATION_ID, notification(null), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } catch (e: SecurityException) {
-            // location permission gone (e.g. restart without "allow all the time"): the hike stays unfinished
-            stopSelf()
-            return START_NOT_STICKY
+            return interrupted() // location permission missing for a background restart
+        } catch (e: IllegalStateException) {
+            return interrupted() // ForegroundServiceStartNotAllowedException: background start not allowed
         }
         val controller = app.recording
         lifecycleScope.launch {
@@ -41,7 +41,12 @@ class RecordingService : LifecycleService() {
                 ACTION_START -> controller.start()
                 ACTION_PAUSE -> controller.pause()
                 ACTION_RESUME -> controller.resume()
-                else -> if (!controller.restoreActive()) stopSelf()
+                else -> controller.restoreActive()
+            }
+            // a late Pause/Resume after Stop, or nothing to restore: never keep running without a hike
+            if (controller.state.value == null && !controller.restoreActive()) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
             }
         }
         if (!observing) {
@@ -60,6 +65,28 @@ class RecordingService : LifecycleService() {
             }
         }
         return START_STICKY
+    }
+
+    /**
+     * Recording could not be continued in the background. The hike stays unfinished; a notification
+     * leads back into the app, which offers to resume or save it.
+     */
+    private fun interrupted(): Int {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Recording", NotificationManager.IMPORTANCE_LOW))
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        nm.notify(
+            INTERRUPTED_ID,
+            Notification.Builder(this, CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                .setContentTitle("Hike interrupted")
+                .setContentText("Tap to continue or save your hike")
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .build(),
+        )
+        stopSelf()
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
@@ -97,6 +124,7 @@ class RecordingService : LifecycleService() {
         const val ACTION_RESUME = "com.walkwalk.RESUME"
         private const val CHANNEL = "recording"
         private const val NOTIFICATION_ID = 1
+        private const val INTERRUPTED_ID = 2
         private const val NOTIFY_EVERY_MS = 5_000L
 
         fun intent(context: Context, action: String?) = Intent(context, RecordingService::class.java).setAction(action)
