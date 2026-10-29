@@ -60,6 +60,34 @@ class GpxTest {
     @Test
     fun parsesRouteOnly() = assertEquals(2, GpxParser.parse(res("gpx/route_only.gpx")).points.size)
 
+    @Test
+    fun waypointsRoundTrip() {
+        val wps = listOf(
+            GpxWaypoint(48.1, 16.1, 1_700_000_000_000, listOf("photos/1.jpg", "photos/2.jpg")),
+            GpxWaypoint(48.2, -0.0005, null),
+        )
+        val out = ByteArrayOutputStream()
+        GpxWriter.write("T", listOf(p(1_700_000_000_000, 47.1, 11.2)), out, wps)
+        assertEquals(wps, GpxParser.parse(out.toByteArray().inputStream()).waypoints)
+    }
+
+    @Test
+    fun waypointNameDescSymIgnored() {
+        val xml = """<gpx version="1.1"><wpt lat="1.5" lon="2.5"><ele>10</ele><time>2024-01-01T00:00:00Z</time>
+            <name>Summit</name><desc>d</desc><sym>Flag</sym></wpt>
+            <trk><name>Track</name><trkseg><trkpt lat="1" lon="2"><time>2024-01-01T00:00:00Z</time></trkpt></trkseg></trk></gpx>"""
+        val g = GpxParser.parse(xml.byteInputStream())
+        assertEquals("Track", g.name)
+        assertEquals(1, g.waypoints.size)
+        assertEquals(1, g.points.size)
+        assertEquals(1.5, g.waypoints[0].lat, 0.0)
+    }
+
+    @Test(expected = GpxException::class)
+    fun fileWithOnlyWaypointsIsRejected() {
+        GpxParser.parse("""<gpx version="1.1"><wpt lat="1" lon="2"/></gpx>""".byteInputStream())
+    }
+
     @Test(expected = GpxException::class)
     fun rejectsNonGpx() {
         GpxParser.parse("<html/>".byteInputStream())

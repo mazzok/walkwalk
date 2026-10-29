@@ -9,15 +9,24 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
 
-data class ParsedGpx(val name: String?, val points: List<TrackPoint>, val hasTimes: Boolean)
+/** A named spot beside the track. [links] are `<link href>` values, kept verbatim. */
+data class GpxWaypoint(val lat: Double, val lon: Double, val time: Long?, val links: List<String> = emptyList())
+
+data class ParsedGpx(val name: String?, val points: List<TrackPoint>, val hasTimes: Boolean, val waypoints: List<GpxWaypoint> = emptyList())
 
 class GpxException(msg: String) : Exception(msg)
 
 object GpxWriter {
-    fun write(name: String, points: List<TrackPoint>, out: OutputStream) {
+    fun write(name: String, points: List<TrackPoint>, out: OutputStream, waypoints: List<GpxWaypoint> = emptyList()) {
         val w = out.bufferedWriter(Charsets.UTF_8)
         w.write("""<?xml version="1.0" encoding="UTF-8"?>""" + "\n")
         w.write("""<gpx version="1.1" creator="walkwalk" xmlns="http://www.topografix.com/GPX/1/1">""" + "\n")
+        for (wp in waypoints) {
+            w.write("""  <wpt lat="${decimal(wp.lat)}" lon="${decimal(wp.lon)}">""")
+            wp.time?.let { w.write("<time>${Instant.ofEpochMilli(it)}</time>") }
+            wp.links.forEach { w.write("""<link href="${escape(it)}"/>""") }
+            w.write("</wpt>\n")
+        }
         w.write("  <trk>\n    <name>${escape(name)}</name>\n")
         points.groupBy { it.segment }.toSortedMap().values.forEach { seg ->
             w.write("    <trkseg>\n")
@@ -47,6 +56,11 @@ object GpxParser {
         var sawGpx = false
         var segment = -1
         var current: RawPoint? = null
+        val waypoints = mutableListOf<GpxWaypoint>()
+        var wptLat = 0.0
+        var wptLon = 0.0
+        var wptTime: Long? = null
+        val wptLinks = mutableListOf<String>()
         val stack = ArrayDeque<String>()
         try {
             parser.setInput(input, null)
@@ -62,8 +76,14 @@ object GpxParser {
                                 if (segment < 0) segment = 0
                                 current = RawPoint(attr(parser, "lat"), attr(parser, "lon"), segment = segment)
                             }
+                            "wpt" -> {
+                                wptLat = attr(parser, "lat"); wptLon = attr(parser, "lon")
+                                wptTime = null; wptLinks.clear()
+                            }
+                            "link" -> if (stack.lastOrNull() == "wpt") parser.getAttributeValue(null, "href")?.let { wptLinks += it }
                             "ele" -> if (current != null && stack.lastOrNull() in POINT_TAGS) current.ele = parser.nextText().trim().toDoubleOrNull()
                             "time" -> if (current != null && stack.lastOrNull() in POINT_TAGS) current.time = parseTime(parser.nextText().trim())
+                                else if (stack.lastOrNull() == "wpt") wptTime = parseTime(parser.nextText().trim())
                             "name" -> if (name == null && stack.lastOrNull() in setOf("trk", "rte", "metadata")) name = parser.nextText().trim().ifEmpty { null }
                         }
                         // nextText() consumed the end tag of ele/time/name, so only push tags still open
@@ -71,6 +91,7 @@ object GpxParser {
                     }
                     XmlPullParser.END_TAG -> {
                         stack.removeLastOrNull()
+                        if (parser.name == "wpt") waypoints += GpxWaypoint(wptLat, wptLon, wptTime, wptLinks.toList())
                         if (parser.name in POINT_TAGS) { current?.let { raw += it }; current = null }
                     }
                 }
@@ -89,7 +110,7 @@ object GpxParser {
                 lat = r.lat, lon = r.lon, gpsAltitude = r.ele, pressureHpa = null, accuracy = null, segment = r.segment,
             )
         }
-        return ParsedGpx(name, points, hasTimes)
+        return ParsedGpx(name, points, hasTimes, waypoints)
     }
 
     private val POINT_TAGS = setOf("trkpt", "rtept")

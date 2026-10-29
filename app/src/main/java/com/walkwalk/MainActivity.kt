@@ -28,6 +28,7 @@ import androidx.navigation.navArgument
 import com.walkwalk.data.HikeEntity
 import com.walkwalk.domain.GpxException
 import com.walkwalk.domain.GpxParser
+import com.walkwalk.domain.GpxWaypoint
 import com.walkwalk.domain.GpxWriter
 import com.walkwalk.recording.RecordingService
 import com.walkwalk.ui.ActiveHike
@@ -214,7 +215,10 @@ class MainActivity : ComponentActivity() {
         val file = withContext(Dispatchers.IO) {
             val dir = File(cacheDir, "export").apply { mkdirs() }
             val safe = hike.name.replace(Regex("[^A-Za-z0-9 _.-]"), "_").ifBlank { "hike" }
-            File(dir, "$safe.gpx").also { f -> f.outputStream().use { GpxWriter.write(hike.name, app.repository.points(hike.id), it) } }
+            File(dir, "$safe.gpx").also { f -> f.outputStream().use { out ->
+                val waypoints = app.repository.landmarks(hike.id).map { GpxWaypoint(it.lat, it.lon, it.time) }
+                GpxWriter.write(hike.name, app.repository.points(hike.id), out, waypoints)
+            } }
         }
         val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
         val send = Intent(Intent.ACTION_SEND)

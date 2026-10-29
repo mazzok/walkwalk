@@ -128,6 +128,7 @@ class HikeRepository(private val db: WalkwalkDb) {
                 ),
             )
             dao.insertPoints(parsed.points.map { TrackPointEntity.from(id, it) })
+            parsed.waypoints.forEach { addLandmark(id, it.lat, it.lon, it.time) }
             id
         }
         fuseAltitudes(id)

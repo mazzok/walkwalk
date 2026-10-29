@@ -2,6 +2,7 @@ package com.walkwalk.data
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.walkwalk.domain.GpxWaypoint
 import com.walkwalk.domain.ParsedGpx
 import com.walkwalk.domain.straightLine
 import kotlinx.coroutines.test.runTest
@@ -43,6 +44,16 @@ class LandmarkRepositoryTest {
         val id = repo.importGpx(ParsedGpx("t", pts, hasTimes = false), "fallback")
         repo.addLandmarkAt(id, pts[2].lat, pts[2].lon)
         assertNull(repo.landmarks(id).single().time)
+    }
+
+    @Test
+    fun importGpxCreatesLandmarksWithoutPhotos() = runTest {
+        val pts = straightLine(1.25, 2000, 10)
+        val wp = GpxWaypoint(48.1, 16.1, 5000L, listOf("photos/9.jpg"))
+        val id = repo.importGpx(ParsedGpx("t", pts, hasTimes = true, waypoints = listOf(wp)), "fallback")
+        val lm = repo.landmarks(id).single()
+        assertEquals(5000L, lm.time)
+        assertTrue(lm.photos.isEmpty())
     }
 
     @Test
