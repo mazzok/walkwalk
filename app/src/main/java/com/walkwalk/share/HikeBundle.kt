@@ -138,7 +138,7 @@ class BundleImporter(private val repo: HikeRepository, private val photos: Photo
                     bundle.photoUris.mapValues { (_, uri) -> Uri.fromFile(File(target, File(Uri.parse(uri).path!!).name)).toString() }
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             hikeId?.let { photos.deletePrivate(it) }
             throw e
         } finally {

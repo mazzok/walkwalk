@@ -21,7 +21,7 @@ enum class PhotoAccess { FULL, PARTIAL, NONE }
 /**
  * Gallery photos are content:// MediaStore URIs; private copies are file:// URIs under filesDir/photos/<hikeId>/.
  */
-class PhotoStore(private val context: Context) {
+open class PhotoStore(private val context: Context) {
 
     fun access(): PhotoAccess {
         fun granted(p: String) = context.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
@@ -94,7 +94,7 @@ class PhotoStore(private val context: Context) {
         context.contentResolver.delete(uri, null, null)
     }
 
-    fun privateDir(hikeId: Long): File = File(context.filesDir, "photos/$hikeId")
+    open fun privateDir(hikeId: Long): File = File(context.filesDir, "photos/$hikeId")
 
     fun deletePrivate(hikeId: Long) {
         privateDir(hikeId).deleteRecursively()

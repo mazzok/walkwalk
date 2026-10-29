@@ -9,8 +9,10 @@ import com.walkwalk.domain.Stop
 import com.walkwalk.domain.Stops
 import com.walkwalk.domain.TrackPoint
 import com.walkwalk.share.ReadBundle
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -118,32 +120,45 @@ class HikeRepository(private val db: WalkwalkDb) {
         dao.deleteHike(hikeId)
     }
 
-    suspend fun importGpx(parsed: ParsedGpx, fallbackName: String): Long = insertImported(parsed, fallbackName, null).first
+    suspend fun importGpx(parsed: ParsedGpx, fallbackName: String): Long {
+        val (id, _) = insertImported(parsed, fallbackName)
+        finishImport(id)
+        return id
+    }
 
     /**
      * Imports a bundle as a new hike. [resolvePhotos] maps the bundle's photo links to stored URIs once the new
-     * hike id is known (photos are moved into that hike's folder there). On any failure the hike is removed again.
+     * hike id is known (photos are moved into that hike's folder there). The bundleId is set last, so an
+     * interrupted import is never mistaken for a finished one; on failure the hike is removed again.
      */
     suspend fun importBundle(
         bundle: ReadBundle,
         fallbackName: String,
         resolvePhotos: (hikeId: Long) -> Map<String, String> = { bundle.photoUris },
     ): Long {
-        val (id, landmarkIds) = insertImported(bundle.gpx, fallbackName, bundle.bundleId)
+        val (id, landmarkIds) = insertImported(bundle.gpx, fallbackName)
         try {
+            finishImport(id)
             val uris = resolvePhotos(id)
             bundle.gpx.waypoints.forEachIndexed { i, wp ->
                 val photos = wp.links.mapNotNull { uris[it] }.map { it to null as Long? }
                 if (photos.isNotEmpty()) attachPhotos(landmarkIds[i], photos)
             }
-        } catch (e: Exception) {
-            delete(id)
+            dao.setBundleId(id, bundle.bundleId)
+        } catch (e: Throwable) {
+            // also on cancellation; a failing cleanup must not hide the original error
+            try { withContext(NonCancellable) { delete(id) } } catch (_: Throwable) {}
             throw e
         }
         return id
     }
 
-    private suspend fun insertImported(parsed: ParsedGpx, fallbackName: String, bundleId: String?): Pair<Long, List<Long>> {
+    private suspend fun finishImport(id: Long) {
+        fuseAltitudes(id)
+        recompute(id)
+    }
+
+    private suspend fun insertImported(parsed: ParsedGpx, fallbackName: String): Pair<Long, List<Long>> {
         val first = parsed.points.first()
         val last = parsed.points.last()
         var landmarkIds = emptyList<Long>()
@@ -152,15 +167,12 @@ class HikeRepository(private val db: WalkwalkDb) {
                 HikeEntity(
                     name = parsed.name ?: fallbackName, startTime = first.time, endTime = last.time,
                     status = HikeStatus.FINISHED, source = HikeSource.IMPORTED, hasTimes = parsed.hasTimes,
-                    bundleId = bundleId,
                 ),
             )
             dao.insertPoints(parsed.points.map { TrackPointEntity.from(id, it) })
             landmarkIds = parsed.waypoints.map { addLandmark(id, it.lat, it.lon, it.time) }
             id
         }
-        fuseAltitudes(id)
-        recompute(id)
         return id to landmarkIds
     }
 

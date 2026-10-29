@@ -71,4 +71,26 @@ class BundleImportTest {
         assertNotEquals(a, b)
         assertTrue(File(URI(repo.landmarks(b).single().photos.single().uri)).exists())
     }
+
+    @Test fun failedImportLeavesNothingAndCanBeRetried() = runTest {
+        val bytes = bundle()
+        val failing = BundleImporter(repo, object : PhotoStore(ApplicationProvider.getApplicationContext<Context>()) {
+            override fun privateDir(hikeId: Long): File =
+                // a regular file as parent makes creating the folder fail
+                if (hikeId > 0) File(File(super.privateDir(0).parentFile, "blocked").apply { writeText("x") }, "$hikeId") else super.privateDir(hikeId)
+        })
+        try {
+            failing.import({ ByteArrayInputStream(bytes) }, "fb")
+            org.junit.Assert.fail("expected failure")
+        } catch (_: java.io.IOException) {}
+        assertEquals(0, repo.finishedHikes().size)
+        val root = photos.privateDir(0).parentFile
+        assertEquals(emptyList<String>(), root.list().orEmpty().filter { it.startsWith(".import-") })
+        assertEquals(null, repo.hikeByBundleId("bundle-1"))
+        File(root, "blocked").delete()
+
+        val id = importer.import({ ByteArrayInputStream(bytes) }, "fb")
+        assertEquals(1, repo.finishedHikes().size)
+        assertTrue(File(URI(repo.landmarks(id).single().photos.single().uri)).exists())
+    }
 }
