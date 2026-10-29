@@ -8,6 +8,7 @@ import com.walkwalk.domain.Stats
 import com.walkwalk.domain.Stop
 import com.walkwalk.domain.Stops
 import com.walkwalk.domain.TrackPoint
+import com.walkwalk.share.ReadBundle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import java.time.Instant
@@ -117,23 +118,50 @@ class HikeRepository(private val db: WalkwalkDb) {
         dao.deleteHike(hikeId)
     }
 
-    suspend fun importGpx(parsed: ParsedGpx, fallbackName: String): Long {
+    suspend fun importGpx(parsed: ParsedGpx, fallbackName: String): Long = insertImported(parsed, fallbackName, null).first
+
+    /**
+     * Imports a bundle as a new hike. [resolvePhotos] maps the bundle's photo links to stored URIs once the new
+     * hike id is known (photos are moved into that hike's folder there). On any failure the hike is removed again.
+     */
+    suspend fun importBundle(
+        bundle: ReadBundle,
+        fallbackName: String,
+        resolvePhotos: (hikeId: Long) -> Map<String, String> = { bundle.photoUris },
+    ): Long {
+        val (id, landmarkIds) = insertImported(bundle.gpx, fallbackName, bundle.bundleId)
+        try {
+            val uris = resolvePhotos(id)
+            bundle.gpx.waypoints.forEachIndexed { i, wp ->
+                val photos = wp.links.mapNotNull { uris[it] }.map { it to null as Long? }
+                if (photos.isNotEmpty()) attachPhotos(landmarkIds[i], photos)
+            }
+        } catch (e: Exception) {
+            delete(id)
+            throw e
+        }
+        return id
+    }
+
+    private suspend fun insertImported(parsed: ParsedGpx, fallbackName: String, bundleId: String?): Pair<Long, List<Long>> {
         val first = parsed.points.first()
         val last = parsed.points.last()
+        var landmarkIds = emptyList<Long>()
         val id = db.withTransaction {
             val id = dao.insertHike(
                 HikeEntity(
                     name = parsed.name ?: fallbackName, startTime = first.time, endTime = last.time,
                     status = HikeStatus.FINISHED, source = HikeSource.IMPORTED, hasTimes = parsed.hasTimes,
+                    bundleId = bundleId,
                 ),
             )
             dao.insertPoints(parsed.points.map { TrackPointEntity.from(id, it) })
-            parsed.waypoints.forEach { addLandmark(id, it.lat, it.lon, it.time) }
+            landmarkIds = parsed.waypoints.map { addLandmark(id, it.lat, it.lon, it.time) }
             id
         }
         fuseAltitudes(id)
         recompute(id)
-        return id
+        return id to landmarkIds
     }
 
     private suspend fun fuseAltitudes(hikeId: Long) = db.withTransaction {
