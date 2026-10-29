@@ -42,7 +42,7 @@ class PhotoStore(private val context: Context) {
                 arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATE_TAKEN, MediaStore.Images.Media.DATE_ADDED),
                 "$takenExpr BETWEEN ? AND ?",
                 arrayOf(from.toString(), to.toString()),
-                "$takenExpr DESC",
+                null, // ordered in Kotlin below: an arithmetic sortOrder can be rejected by MediaProvider's SQL checker
             )?.use { c ->
                 while (c.moveToNext()) {
                     val id = c.getLong(0)
@@ -53,7 +53,7 @@ class PhotoStore(private val context: Context) {
         } catch (_: SecurityException) {
             // no gallery access: nothing to suggest
         }
-        out
+        out.sortedByDescending { it.takenAt }
     }
 
     suspend fun state(uri: String): PhotoState = withContext(Dispatchers.IO) {
@@ -67,6 +67,8 @@ class PhotoStore(private val context: Context) {
                     ?.use { it.moveToFirst() } ?: false
             } catch (_: SecurityException) {
                 false
+            } catch (_: IllegalArgumentException) {
+                false // not a MediaStore URI, or the provider rejected it
             }
         }
         decideState(found, access(), isPrivate)
