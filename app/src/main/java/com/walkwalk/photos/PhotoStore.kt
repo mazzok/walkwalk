@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import com.walkwalk.ui.landmarks.Photos
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -21,9 +22,9 @@ enum class PhotoAccess { FULL, PARTIAL, NONE }
 /**
  * Gallery photos are content:// MediaStore URIs; private copies are file:// URIs under filesDir/photos/<hikeId>/.
  */
-open class PhotoStore(private val context: Context) {
+open class PhotoStore(private val context: Context) : Photos {
 
-    fun access(): PhotoAccess {
+    override fun access(): PhotoAccess {
         fun granted(p: String) = context.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
         return when {
             granted(Manifest.permission.READ_MEDIA_IMAGES) -> PhotoAccess.FULL
@@ -33,7 +34,7 @@ open class PhotoStore(private val context: Context) {
     }
 
     /** Gallery photos taken within [from, to] (epoch ms), newest first. */
-    suspend fun takenBetween(from: Long, to: Long): List<GalleryPhoto> = withContext(Dispatchers.IO) {
+    override suspend fun takenBetween(from: Long, to: Long): List<GalleryPhoto> = withContext(Dispatchers.IO) {
         val takenExpr = "COALESCE(${MediaStore.Images.Media.DATE_TAKEN}, ${MediaStore.Images.Media.DATE_ADDED} * 1000)"
         val out = mutableListOf<GalleryPhoto>()
         try {
@@ -56,7 +57,7 @@ open class PhotoStore(private val context: Context) {
         out.sortedByDescending { it.takenAt }
     }
 
-    suspend fun state(uri: String): PhotoState = withContext(Dispatchers.IO) {
+    override suspend fun state(uri: String): PhotoState = withContext(Dispatchers.IO) {
         val parsed = Uri.parse(uri)
         val isPrivate = parsed.scheme == "file"
         val found = if (isPrivate) {
@@ -75,7 +76,7 @@ open class PhotoStore(private val context: Context) {
     }
 
     /** A pending MediaStore row in Pictures/walkwalk for the camera app to write into (EXTRA_OUTPUT). */
-    fun newCameraTarget(): Uri {
+    override fun newCameraTarget(): Uri {
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "walkwalk_${System.currentTimeMillis()}.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
@@ -86,11 +87,11 @@ open class PhotoStore(private val context: Context) {
             ?: error("could not create camera target")
     }
 
-    fun commitCameraTarget(uri: Uri) {
+    override fun commitCameraTarget(uri: Uri) {
         context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
     }
 
-    fun discardCameraTarget(uri: Uri) {
+    override fun discardCameraTarget(uri: Uri) {
         context.contentResolver.delete(uri, null, null)
     }
 
