@@ -1,6 +1,11 @@
 package com.walkwalk.map
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -13,6 +18,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
+import com.walkwalk.R
+import com.walkwalk.data.Landmark
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.expressions.Expression
 import androidx.compose.ui.unit.dp
 import kotlin.math.absoluteValue
 import androidx.compose.runtime.DisposableEffect
@@ -102,6 +118,36 @@ object MapSetup {
 private const val TRACK_SRC = "track"
 private const val MARKER_SRC = "marker"
 private const val STOPS_SRC = "stops"
+private const val LANDMARKS_SRC = "landmarks"
+private const val PIN_LAYER = "landmark-pins"
+private const val PIN_IMAGE = "pin"
+private const val PIN_SELECTED_IMAGE = "pin-selected"
+
+/** One point per landmark; `id` and `selected` drive hit testing and the icon choice. */
+fun landmarkFeatures(landmarks: List<Landmark>, selectedId: Long?): FeatureCollection =
+    FeatureCollection.fromFeatures(landmarks.map {
+        Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)).also { f ->
+            f.addNumberProperty("id", it.id)
+            f.addBooleanProperty("selected", it.id == selectedId)
+        }
+    })
+
+/** ic_pin has a pure red body and white details; the matrix swaps red for [color] and leaves white alone. */
+private fun pinBitmap(context: Context, color: Int): Bitmap {
+    val src = ContextCompat.getDrawable(context, R.drawable.ic_pin)!!.toBitmap()
+    val tr = ((color shr 16) and 0xFF) / 255f
+    val tg = ((color shr 8) and 0xFF) / 255f
+    val tb = (color and 0xFF) / 255f
+    val matrix = ColorMatrix(floatArrayOf(
+        tr, 1 - tr, 0f, 0f, 0f,
+        tg, 1 - tg, 0f, 0f, 0f,
+        tb, 1 - tb, 0f, 0f, 0f,
+        0f, 0f, 0f, 1f, 0f,
+    ))
+    val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+    Canvas(out).drawBitmap(src, 0f, 0f, Paint().apply { colorFilter = ColorMatrixColorFilter(matrix) })
+    return out
+}
 
 /**
  * Topographic map with the hiking-trail overlay, a track line (one line per segment) and a position marker.
@@ -118,6 +164,13 @@ fun TopoMap(
     // where to look while there is no marker yet, e.g. the phone's last known position
     initialCenter: Pair<Double, Double>? = null,
     onUserPan: () -> Unit = {},
+    landmarks: List<Landmark> = emptyList(),
+    selectedLandmarkId: Long? = null,
+    onLandmarkClick: (Long) -> Unit = {},
+    onMapClick: () -> Unit = {},
+    onLongPress: ((lat: Double, lon: Double) -> Unit)? = null,
+    // drawn centred just below the selected pin
+    selectedOverlay: (@Composable () -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -127,6 +180,26 @@ fun TopoMap(
     var fitted by remember { mutableStateOf(false) }
     var bearing by remember { mutableFloatStateOf(0f) }
     val panCallback by rememberUpdatedState(onUserPan)
+    val landmarkClick by rememberUpdatedState(onLandmarkClick)
+    val mapClick by rememberUpdatedState(onMapClick)
+    val longPress by rememberUpdatedState(onLongPress)
+    val selectedLandmark by rememberUpdatedState(landmarks.firstOrNull { it.id == selectedLandmarkId })
+    // screen position (px) of the selected pin's tip, null when there is none or it is off screen
+    var overlayPos by remember { mutableStateOf<IntOffset?>(null) }
+    val density = LocalDensity.current
+    val updateOverlay = remember(mapView) {
+        {
+            val m = map
+            val l = selectedLandmark
+            overlayPos = if (m == null || l == null) null else {
+                val p = m.projection.toScreenLocation(LatLng(l.lat, l.lon))
+                if (p.x in 0f..mapView.width.toFloat() && p.y in 0f..mapView.height.toFloat()) {
+                    IntOffset(p.x.toInt(), p.y.toInt())
+                } else null
+            }
+        }
+    }
+    val updateOverlayNow by rememberUpdatedState(updateOverlay)
 
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
@@ -153,7 +226,23 @@ fun TopoMap(
             map = m
             // the built-in compass sits under the screens' top cards; ours is drawn below
             m.uiSettings.isCompassEnabled = false
-            m.addOnCameraMoveListener { bearing = m.cameraPosition.bearing.toFloat() }
+            m.addOnCameraMoveListener {
+                bearing = m.cameraPosition.bearing.toFloat()
+                updateOverlayNow()
+            }
+            m.addOnMapClickListener { latLng ->
+                val hit = if (m.style?.getLayer(PIN_LAYER) != null) {
+                    m.queryRenderedFeatures(m.projection.toScreenLocation(latLng), PIN_LAYER).firstOrNull()
+                } else null
+                val id = hit?.getNumberProperty("id")?.toLong()
+                if (id != null) landmarkClick(id) else mapClick()
+                true
+            }
+            m.addOnMapLongClickListener { latLng ->
+                val handler = longPress
+                handler?.invoke(latLng.latitude, latLng.longitude)
+                handler != null
+            }
             m.addOnCameraMoveStartedListener { reason ->
                 if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) panCallback()
             }
@@ -168,6 +257,18 @@ fun TopoMap(
                 s.addLayer(CircleLayer("stops-dot", STOPS_SRC).withProperties(
                     PropertyFactory.circleColor("#E0A030"), PropertyFactory.circleRadius(5f),
                     PropertyFactory.circleStrokeColor("#FFFFFF"), PropertyFactory.circleStrokeWidth(1.5f),
+                ))
+                s.addSource(GeoJsonSource(LANDMARKS_SRC))
+                s.addImage(PIN_IMAGE, pinBitmap(context, android.graphics.Color.parseColor("#0066CC")))
+                s.addImage(PIN_SELECTED_IMAGE, pinBitmap(context, android.graphics.Color.parseColor("#E0A030")))
+                s.addLayer(SymbolLayer(PIN_LAYER, LANDMARKS_SRC).withProperties(
+                    PropertyFactory.iconImage(Expression.switchCase(
+                        Expression.toBool(Expression.get("selected")), Expression.literal(PIN_SELECTED_IMAGE),
+                        Expression.literal(PIN_IMAGE),
+                    )),
+                    PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                    PropertyFactory.iconAllowOverlap(true),
+                    PropertyFactory.iconIgnorePlacement(true),
                 ))
                 s.addLayer(CircleLayer("marker-dot", MARKER_SRC).withProperties(
                     PropertyFactory.circleColor("#0066CC"), PropertyFactory.circleRadius(7f),
@@ -199,6 +300,12 @@ fun TopoMap(
         )
     }
 
+    LaunchedEffect(style, landmarks, selectedLandmarkId) {
+        val s = style ?: return@LaunchedEffect
+        s.getSourceAs<GeoJsonSource>(LANDMARKS_SRC)?.setGeoJson(landmarkFeatures(landmarks, selectedLandmarkId))
+        updateOverlay()
+    }
+
     LaunchedEffect(style, initialCenter) {
         val m = map ?: return@LaunchedEffect
         if (style == null || initialCenter == null || marker != null) return@LaunchedEffect
@@ -222,6 +329,13 @@ fun TopoMap(
 
     Box(modifier) {
         AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+        val pos = overlayPos
+        if (selectedOverlay != null && pos != null) {
+            Box(Modifier.layout { measurable, c ->
+                val pl = measurable.measure(Constraints(maxWidth = c.maxWidth, maxHeight = c.maxHeight))
+                layout(pl.width, pl.height) { pl.place(pos.x - pl.width / 2, pos.y + (4 * density.density).toInt()) }
+            }) { selectedOverlay() }
+        }
         // shown once the map is turned; the arrow points north, a tap turns the map north-up and flat again
         if (bearing.absoluteValue > 0.5f && bearing.absoluteValue < 359.5f) {
             SmallFloatingActionButton(

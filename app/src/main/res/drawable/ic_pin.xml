@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The red body is a placeholder: TopoMap recolours it per pin state, white stays white. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="36dp"
+    android:viewportWidth="28"
+    android:viewportHeight="36">
+    <path
+        android:fillColor="#FF0000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:pathData="M14,34 C14,34 3,21.5 3,13 A11,11 0 1,1 25,13 C25,21.5 14,34 14,34 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M14,8.5 A4.5,4.5 0 1,1 14,17.5 A4.5,4.5 0 1,1 14,8.5 Z" />
+</vector>
