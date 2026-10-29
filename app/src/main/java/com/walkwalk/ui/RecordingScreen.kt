@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.AlertDialog
@@ -67,6 +68,7 @@ private fun lastKnownPosition(context: Context): Pair<Double, Double>? {
 fun RecordingScreen(
     controller: RecordingController,
     repo: HikeRepository,
+    onBack: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
@@ -129,10 +131,16 @@ fun RecordingScreen(
         Column(Modifier.safeDrawingPadding().padding(12.dp).fillMaxWidth()) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(10.dp)) {
-                    Text(
-                        if (recording) "Recording · ${Format.duration(elapsed)}" else "Paused · ${Format.duration(elapsed)}",
-                        style = MaterialTheme.typography.titleSmall,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to hikes, keep recording")
+                        }
+                        Text(
+                            if (recording) "Recording · ${Format.duration(elapsed)}" else "Paused · ${Format.duration(elapsed)}",
+                            Modifier.padding(start = 6.dp),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                    }
                     if (last == null && recording) {
                         Row(
                             Modifier.padding(vertical = 4.dp),

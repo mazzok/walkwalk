@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AssistChip
@@ -33,7 +35,7 @@ import com.walkwalk.map.TopoMap
 
 /** Replay layout B: full-screen map, floating numbers at the top, profile and scrubber at the bottom. */
 @Composable
-fun ReplayScreen(vm: ReplayViewModel, onCorrectAltitude: () -> Unit) {
+fun ReplayScreen(vm: ReplayViewModel, onBack: () -> Unit, onCorrectAltitude: () -> Unit) {
     val hike by vm.hike.collectAsState()
     val points by vm.points.collectAsState()
     val frame by vm.frame.collectAsState()
@@ -60,7 +62,12 @@ fun ReplayScreen(vm: ReplayViewModel, onCorrectAltitude: () -> Unit) {
         if (h != null && f != null) {
             Card(Modifier.safeDrawingPadding().padding(12.dp).fillMaxWidth().clickable { expanded = !expanded }) {
                 Column(Modifier.padding(10.dp)) {
-                    Text(h.name, style = MaterialTheme.typography.titleSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to hikes")
+                        }
+                        Text(h.name, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.titleSmall)
+                    }
                     if (canPlay) {
                         Text(
                             "${Format.clock(f.clockTime)} · ${Format.duration(f.elapsedMs)} elapsed" + if (f.inStop) " · resting" else "",

@@ -12,6 +12,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.content.FileProvider
@@ -27,6 +30,7 @@ import com.walkwalk.domain.GpxException
 import com.walkwalk.domain.GpxParser
 import com.walkwalk.domain.GpxWriter
 import com.walkwalk.recording.RecordingService
+import com.walkwalk.ui.ActiveHike
 import com.walkwalk.ui.HikeListScreen
 import com.walkwalk.ui.RecordingScreen
 import com.walkwalk.ui.ReplayScreen
@@ -112,9 +116,27 @@ class MainActivity : ComponentActivity() {
 
         NavHost(nav, startDestination = LIST) {
             composable(LIST) {
+                val live by app.recording.state.collectAsState()
+                // re-read when a hike starts or ends, not on every fix
+                val unfinished by produceState<HikeEntity?>(null, live?.hikeId) { value = app.repository.activeHike() }
+                val l = live
+                val u = unfinished
                 HikeListScreen(
                     repo = app.repository,
                     snackbar = snackbar,
+                    active = when {
+                        l != null -> ActiveHike(u?.name ?: "Hike", l.status, l.distanceM, l.elapsedMs)
+                        u != null -> ActiveHike(u.name, null, 0.0, 0)
+                        else -> null
+                    },
+                    onOpenActive = { nav.navigate(RECORDING) { launchSingleTop = true } },
+                    onReplaceActive = { startNew ->
+                        scope.launch {
+                            if (app.recording.state.value != null) app.stopRecording()
+                            else app.repository.activeHike()?.let { app.saveUnfinished(it.id) }
+                            startNew()
+                        }
+                    },
                     onOpen = { nav.navigate("replay/$it") },
                     onStartHike = startWithPermissions,
                     onStartDemo = if (BuildConfig.DEBUG) startDemo else null,
@@ -128,7 +150,9 @@ class MainActivity : ComponentActivity() {
                 RecordingScreen(
                     controller = app.recording,
                     repo = app.repository,
-                    onPause = { RecordingService.send(this@MainActivity, RecordingService.ACTION_PAUSE) },
+                    // the hike keeps recording in the background; the list shows it as active
+                    onBack = { nav.popBackStack(LIST, inclusive = false) },
+                    onPause ={ RecordingService.send(this@MainActivity, RecordingService.ACTION_PAUSE) },
                     onResume = { RecordingService.send(this@MainActivity, RecordingService.ACTION_RESUME) },
                     onStop = {
                         scope.launch {
@@ -151,7 +175,7 @@ class MainActivity : ComponentActivity() {
             composable("replay/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
                 val id = entry.arguments!!.getLong("id")
                 val vm = viewModel(key = "replay-$id") { ReplayViewModel(app.repository, id) }
-                ReplayScreen(vm, onCorrectAltitude = {
+                ReplayScreen(vm, onBack = { nav.popBackStack(LIST, inclusive = false) }, onCorrectAltitude = {
                     scope.launch {
                         val ok = app.corrector.correct(id)
                         vm.reload()
