@@ -2,19 +2,23 @@ package com.walkwalk.data
 
 import androidx.room.withTransaction
 import com.walkwalk.domain.Altitude
+import com.walkwalk.domain.Geo
 import com.walkwalk.domain.ParsedGpx
 import com.walkwalk.domain.Stats
 import com.walkwalk.domain.Stop
 import com.walkwalk.domain.Stops
 import com.walkwalk.domain.TrackPoint
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.UUID
 
 class HikeRepository(private val db: WalkwalkDb) {
     private val dao = db.hikeDao()
+    private val landmarkDao = db.landmarkDao()
 
     fun observeFinishedHikes(): Flow<List<HikeEntity>> = dao.observeFinished()
     suspend fun finishedHikes(): List<HikeEntity> = dao.finished()
@@ -61,7 +65,53 @@ class HikeRepository(private val db: WalkwalkDb) {
         true
     }
 
+    fun observeLandmarks(hikeId: Long): Flow<List<Landmark>> =
+        combine(landmarkDao.observeLandmarks(hikeId), landmarkDao.observePhotosOfHike(hikeId)) { lms, photos ->
+            assemble(lms, photos)
+        }
+
+    suspend fun landmarks(hikeId: Long): List<Landmark> =
+        assemble(landmarkDao.landmarks(hikeId), landmarkDao.photosOfHike(hikeId))
+
+    private fun assemble(lms: List<LandmarkEntity>, photos: List<LandmarkPhotoEntity>): List<Landmark> {
+        val byLandmark = photos.groupBy { it.landmarkId }
+        return lms.map { Landmark(it.id, it.lat, it.lon, it.time, byLandmark[it.id].orEmpty()) }
+    }
+
+    suspend fun addLandmark(hikeId: Long, lat: Double, lon: Double, time: Long?): Long =
+        landmarkDao.insertLandmark(LandmarkEntity(hikeId = hikeId, lat = lat, lon = lon, time = time))
+
+    /** A landmark placed on the map takes the time of the nearest track point, if the track has real times. */
+    suspend fun addLandmarkAt(hikeId: Long, lat: Double, lon: Double): Long {
+        val hike = dao.hike(hikeId)
+        val time = if (hike?.hasTimes == true) {
+            dao.points(hikeId).minByOrNull { Geo.distance(lat, lon, it.lat, it.lon) }?.time
+        } else null
+        return addLandmark(hikeId, lat, lon, time)
+    }
+
+    suspend fun attachPhotos(landmarkId: Long, photos: List<Pair<String, Long?>>) = db.withTransaction {
+        val existing = landmarkDao.photosOf(landmarkId).map { it.uri }.toMutableSet()
+        val fresh = photos.filter { existing.add(it.first) }
+        landmarkDao.insertPhotos(fresh.map { LandmarkPhotoEntity(landmarkId = landmarkId, uri = it.first, takenAt = it.second) })
+    }
+
+    suspend fun removePhoto(photoId: Long) = landmarkDao.deletePhoto(photoId)
+
+    suspend fun deleteLandmark(landmarkId: Long) = db.withTransaction {
+        landmarkDao.deletePhotosOf(landmarkId)
+        landmarkDao.deleteLandmark(landmarkId)
+    }
+
+    suspend fun hikeByBundleId(bundleId: String): HikeEntity? = dao.hikeByBundleId(bundleId)
+
+    suspend fun ensureBundleId(hikeId: Long): String = db.withTransaction {
+        dao.hike(hikeId)?.bundleId ?: UUID.randomUUID().toString().also { dao.setBundleId(hikeId, it) }
+    }
+
     suspend fun delete(hikeId: Long) = db.withTransaction {
+        landmarkDao.deletePhotosOfHike(hikeId)
+        landmarkDao.deleteLandmarksOfHike(hikeId)
         dao.deletePoints(hikeId)
         dao.deleteStops(hikeId)
         dao.deleteHike(hikeId)

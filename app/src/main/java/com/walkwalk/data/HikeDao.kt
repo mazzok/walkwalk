@@ -20,6 +20,8 @@ interface HikeDao {
     @Query("UPDATE HikeEntity SET status = :status WHERE id = :id") suspend fun setStatus(id: Long, status: HikeStatus)
     @Query("UPDATE HikeEntity SET name = :name WHERE id = :id") suspend fun rename(id: Long, name: String)
     @Query("DELETE FROM HikeEntity WHERE id = :id") suspend fun deleteHike(id: Long)
+    @Query("SELECT * FROM HikeEntity WHERE bundleId = :bundleId LIMIT 1") suspend fun hikeByBundleId(bundleId: String): HikeEntity?
+    @Query("UPDATE HikeEntity SET bundleId = :bundleId WHERE id = :id") suspend fun setBundleId(id: Long, bundleId: String)
 
     @Insert suspend fun insertPoint(p: TrackPointEntity)
     @Insert suspend fun insertPoints(p: List<TrackPointEntity>)

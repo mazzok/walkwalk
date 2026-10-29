@@ -31,6 +31,8 @@ data class HikeEntity(
     val maxAltM: Double? = null,
     val avgSpeedKmh: Double = 0.0,
     val maxSpeedKmh: Double = 0.0,
+    // set on first share; lets an imported bundle find the hike it came from
+    val bundleId: String? = null,
 ) {
     fun withStats(s: HikeStats) = copy(
         distanceM = s.distanceM, totalMs = s.totalMs, movingMs = s.movingMs, ascentM = s.ascentM,
@@ -72,3 +74,22 @@ data class StopEntity(
 ) {
     fun toStop() = Stop(start, end)
 }
+
+@Entity(indices = [Index("hikeId")])
+data class LandmarkEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val hikeId: Long,
+    val lat: Double,
+    val lon: Double,
+    val time: Long?,
+)
+
+@Entity(indices = [Index("landmarkId")])
+data class LandmarkPhotoEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val landmarkId: Long,
+    val uri: String,
+    val takenAt: Long?,
+)
+
+data class Landmark(val id: Long, val lat: Double, val lon: Double, val time: Long?, val photos: List<LandmarkPhotoEntity>)
