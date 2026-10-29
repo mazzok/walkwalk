@@ -49,6 +49,8 @@ fun HikeListScreen(
     snackbar: SnackbarHostState,
     onOpen: (Long) -> Unit,
     onStartHike: () -> Unit,
+    // debug builds only: replays a bundled route instead of GPS
+    onStartDemo: (() -> Unit)?,
     onImport: () -> Unit,
     onExport: (HikeEntity) -> Unit,
     onRename: (HikeEntity, String) -> Unit,
@@ -64,6 +66,7 @@ fun HikeListScreen(
         bottomBar = {
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onStartHike, modifier = Modifier.weight(1f)) { Text("Start hike") }
+                onStartDemo?.let { OutlinedButton(onClick = it) { Text("Demo") } }
                 OutlinedButton(onClick = onImport) { Text("Import GPX") }
             }
         },

@@ -17,7 +17,10 @@ android {
         versionName = "0.1"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true // BuildConfig.DEBUG gates the demo hike
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

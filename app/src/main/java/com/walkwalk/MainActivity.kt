@@ -96,7 +96,17 @@ class MainActivity : ComponentActivity() {
                 scope.launch { snackbar.showSnackbar("Location permission is needed to record a hike.") }
             }
         }
-        val pickGpx = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        // the demo still runs the location foreground service, so it needs the same permissions
+        val startDemo = rememberPermissionFlow { canRecord ->
+            if (canRecord) {
+                app.demo.enable()
+                RecordingService.send(this, RecordingService.ACTION_START)
+                nav.navigate(RECORDING) { launchSingleTop = true }
+            } else {
+                scope.launch { snackbar.showSnackbar("Location permission is needed to record a hike.") }
+            }
+        }
+        val pickGpx =rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) scope.launch { importGpx(uri, nav, snackbar) }
         }
 
@@ -107,6 +117,7 @@ class MainActivity : ComponentActivity() {
                     snackbar = snackbar,
                     onOpen = { nav.navigate("replay/$it") },
                     onStartHike = startWithPermissions,
+                    onStartDemo = if (BuildConfig.DEBUG) startDemo else null,
                     onImport = { pickGpx.launch(arrayOf("*/*")) },
                     onExport = { hike -> scope.launch { exportGpx(hike) } },
                     onRename = { hike, name -> scope.launch { app.repository.rename(hike.id, name) } },

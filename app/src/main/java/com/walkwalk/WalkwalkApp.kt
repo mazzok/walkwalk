@@ -7,6 +7,7 @@ import com.walkwalk.data.OpenMeteoElevationApi
 import com.walkwalk.data.WalkwalkDb
 import com.walkwalk.map.MapSetup
 import com.walkwalk.recording.BaroPressureSource
+import com.walkwalk.recording.DemoMode
 import com.walkwalk.recording.GpsLocationSource
 import com.walkwalk.recording.RecordingController
 import android.util.Log
@@ -34,8 +35,12 @@ class WalkwalkApp : Application() {
 
     val corrector: AltitudeCorrector by lazy { AltitudeCorrector(OpenMeteoElevationApi(httpClient), repository) }
 
+    val demo: DemoMode by lazy { DemoMode(this) }
+
     val recording: RecordingController by lazy {
-        RecordingController(repository, GpsLocationSource(this), BaroPressureSource(this), appScope) { System.currentTimeMillis() }
+        RecordingController(
+            repository, demo.location(GpsLocationSource(this)), demo.pressure(BaroPressureSource(this)), appScope,
+        ) { demo.now() }
     }
 
     override fun onCreate() {
@@ -46,7 +51,7 @@ class WalkwalkApp : Application() {
     /** Ends the hike (the user pressed Stop) and corrects its altitude in the background when online. */
     suspend fun stopRecording(): Long? {
         // runs in the app scope so a screen going away mid-stop can't leave a half-finished hike
-        val id = appScope.async { recording.stop() }.await() ?: return null
+        val id = appScope.async { recording.stop().also { demo.disable() } }.await() ?: return null
         appScope.launch { corrector.correct(id) }
         return id
     }
@@ -56,6 +61,7 @@ class WalkwalkApp : Application() {
         appScope.async {
             val end = repository.points(hikeId).lastOrNull()?.time ?: System.currentTimeMillis()
             repository.finish(hikeId, end)
+            demo.disable()
         }.await()
         appScope.launch { corrector.correct(hikeId) }
         return hikeId

@@ -1,7 +1,20 @@
 package com.walkwalk.map
 
 import android.content.Context
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material3.Icon
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.unit.dp
+import kotlin.math.absoluteValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -20,6 +33,7 @@ import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
 import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
@@ -101,6 +115,8 @@ fun TopoMap(
     follow: Boolean,
     fitTrackOnFirstLayout: Boolean,
     stopMarkers: List<Pair<Double, Double>> = emptyList(),
+    // where to look while there is no marker yet, e.g. the phone's last known position
+    initialCenter: Pair<Double, Double>? = null,
     onUserPan: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -109,6 +125,7 @@ fun TopoMap(
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
     var style by remember { mutableStateOf<Style?>(null) }
     var fitted by remember { mutableStateOf(false) }
+    var bearing by remember { mutableFloatStateOf(0f) }
     val panCallback by rememberUpdatedState(onUserPan)
 
     DisposableEffect(lifecycle) {
@@ -134,6 +151,9 @@ fun TopoMap(
     LaunchedEffect(mapView) {
         mapView.getMapAsync { m ->
             map = m
+            // the built-in compass sits under the screens' top cards; ours is drawn below
+            m.uiSettings.isCompassEnabled = false
+            m.addOnCameraMoveListener { bearing = m.cameraPosition.bearing.toFloat() }
             m.addOnCameraMoveStartedListener { reason ->
                 if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) panCallback()
             }
@@ -179,6 +199,12 @@ fun TopoMap(
         )
     }
 
+    LaunchedEffect(style, initialCenter) {
+        val m = map ?: return@LaunchedEffect
+        if (style == null || initialCenter == null || marker != null) return@LaunchedEffect
+        m.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(initialCenter.first, initialCenter.second), 14.0))
+    }
+
     LaunchedEffect(style, marker, follow) {
         val s = style ?: return@LaunchedEffect
         val src = s.getSourceAs<GeoJsonSource>(MARKER_SRC) ?: return@LaunchedEffect
@@ -194,5 +220,21 @@ fun TopoMap(
         }
     }
 
-    AndroidView(factory = { mapView }, modifier = modifier)
+    Box(modifier) {
+        AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+        // shown once the map is turned; the arrow points north, a tap turns the map north-up and flat again
+        if (bearing.absoluteValue > 0.5f && bearing.absoluteValue < 359.5f) {
+            SmallFloatingActionButton(
+                onClick = {
+                    val m = map ?: return@SmallFloatingActionButton
+                    m.animateCamera(CameraUpdateFactory.newCameraPosition(
+                        CameraPosition.Builder(m.cameraPosition).bearing(0.0).tilt(0.0).build(),
+                    ), 300)
+                },
+                modifier = Modifier.align(Alignment.CenterEnd).offset(y = (-56).dp).padding(12.dp),
+            ) {
+                Icon(Icons.Default.Navigation, contentDescription = "Face north", Modifier.rotate(-bearing))
+            }
+        }
+    }
 }

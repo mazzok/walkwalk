@@ -1,5 +1,7 @@
 package com.walkwalk.ui
 
+import android.content.Context
+import android.location.LocationManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,7 +10,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -16,6 +20,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SmallFloatingActionButton
@@ -35,12 +40,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.walkwalk.data.HikeEntity
 import com.walkwalk.data.HikeRepository
 import com.walkwalk.data.HikeStatus
 import com.walkwalk.map.TopoMap
 import com.walkwalk.recording.RecordingController
 import kotlinx.coroutines.delay
+
+/** Most recent position any provider still remembers, used to place the map before the first fix. */
+private fun lastKnownPosition(context: Context): Pair<Double, Double>? {
+    val manager = context.getSystemService(LocationManager::class.java) ?: return null
+    return try {
+        manager.allProviders
+            .mapNotNull { manager.getLastKnownLocation(it) }
+            .maxByOrNull { it.time }
+            ?.let { it.latitude to it.longitude }
+    } catch (e: SecurityException) {
+        null
+    }
+}
 
 @Composable
 fun RecordingScreen(
@@ -57,7 +78,10 @@ fun RecordingScreen(
     var follow by remember { mutableStateOf(true) }
     var confirmStop by remember { mutableStateOf(false) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    val atRisk = remember { Permissions.pocketRecordingAtRisk(context) }
+    // re-checked on every resume: the battery dialog and Settings answer after this screen is already open
+    var atRisk by remember { mutableStateOf(Permissions.pocketRecordingAtRisk(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { atRisk = Permissions.pocketRecordingAtRisk(context) }
+    var riskDismissed by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (true) { now = System.currentTimeMillis(); delay(1_000) }
@@ -87,6 +111,7 @@ fun RecordingScreen(
         return
     }
     val last = s.track.lastOrNull()
+    val lastKnown = remember { lastKnownPosition(context) }
     val recording = s.status == HikeStatus.RECORDING
     // elapsed keeps ticking between fixes while recording
     val elapsed = s.elapsedMs + if (recording && last != null) (now - last.time).coerceIn(0, 60_000) else 0
@@ -98,6 +123,7 @@ fun RecordingScreen(
             marker = last?.let { it.lat to it.lon },
             follow = follow,
             fitTrackOnFirstLayout = false,
+            initialCenter = if (last == null) lastKnown else null,
             onUserPan = { follow = false },
         )
         Column(Modifier.safeDrawingPadding().padding(12.dp).fillMaxWidth()) {
@@ -107,6 +133,16 @@ fun RecordingScreen(
                         if (recording) "Recording · ${Format.duration(elapsed)}" else "Paused · ${Format.duration(elapsed)}",
                         style = MaterialTheme.typography.titleSmall,
                     )
+                    if (last == null && recording) {
+                        Row(
+                            Modifier.padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                            Text("Waiting for GPS…", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                     StatsRow(
                         "km" to Format.km2(s.distanceM),
                         "m alt" to Format.meters(s.altitudeM),
@@ -115,14 +151,19 @@ fun RecordingScreen(
                     )
                 }
             }
-            if (atRisk) {
+            if (atRisk && !riskDismissed) {
                 Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    Text(
-                        "Recording may stop when the phone is in your pocket — allow location all the time and disable battery optimisation.",
-                        Modifier.padding(10.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFB00020),
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Recording may stop when the phone is in your pocket — allow location all the time and disable battery optimisation.",
+                            Modifier.weight(1f).padding(start = 10.dp, top = 10.dp, bottom = 10.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFB00020),
+                        )
+                        IconButton(onClick = { riskDismissed = true }) {
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss")
+                        }
+                    }
                 }
             }
         }
