@@ -32,7 +32,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.walkwalk.data.HikeEntity
-import com.walkwalk.domain.GpxException
 import com.walkwalk.domain.GpxParser
 import com.walkwalk.domain.GpxWaypoint
 import com.walkwalk.domain.GpxWriter
@@ -49,6 +48,7 @@ import com.walkwalk.ui.ReplayScreen
 import com.walkwalk.ui.ReplayViewModel
 import com.walkwalk.ui.landmarks.LandmarksViewModel
 import com.walkwalk.ui.rememberPermissionFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -167,7 +167,7 @@ class MainActivity : ComponentActivity() {
                     onStartDemo = if (BuildConfig.DEBUG) startDemo else null,
                     onImport = { pickGpx.launch(arrayOf("*/*")) },
                     onExport = { hike -> scope.launch { exportGpx(hike) } },
-                    onSend = { hike -> scope.launch { sendHike(hike) { bigSend = it } } },
+                    onSend = { hike -> scope.launch { sendHike(hike, snackbar) { bigSend = it } } },
                     onRename = { hike, name -> scope.launch { app.repository.rename(hike.id, name) } },
                     onDelete = { hike ->
                         scope.launch {
@@ -227,9 +227,9 @@ class MainActivity : ComponentActivity() {
 
     /** Imports a .walkwalk bundle or a GPX file, told apart by the zip magic bytes. */
     private suspend fun importFile(uri: Uri, nav: NavHostController, snackbar: SnackbarHostState) {
-        val fallbackName = displayName(uri) ?: "Imported hike"
         val result = try {
             withContext(Dispatchers.IO) {
+                val fallbackName = displayName(uri) ?: "Imported hike"
                 val head = contentResolver.openInputStream(uri)?.use { it.readNBytes(4) } ?: throw IOException("cannot open")
                 when (importKind(head)) {
                     ImportKind.BUNDLE -> {
@@ -242,9 +242,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        } catch (e: GpxException) {
-            null
-        } catch (e: IOException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // a bad file or a revoked URI can fail in many ways; all of them mean "can't read it"
             null
         }
         if (result == null) {
@@ -256,10 +257,13 @@ class MainActivity : ComponentActivity() {
         nav.navigate("replay/$id")
     }
 
-    private suspend fun sendHike(hike: HikeEntity, confirm: (File) -> Unit) {
+    private suspend fun sendHike(hike: HikeEntity, snackbar: SnackbarHostState, confirm: (File) -> Unit) {
         val file = try {
             HikeSender(this, app).build(hike)
-        } catch (e: IOException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            snackbar.showSnackbar("Couldn't prepare the hike for sending")
             return
         }
         if (file.length() > HikeBundle.WARN_BYTES) confirm(file) else launchSend(file)

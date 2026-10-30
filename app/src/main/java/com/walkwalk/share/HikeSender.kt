@@ -6,6 +6,7 @@ import android.net.Uri
 import com.walkwalk.WalkwalkApp
 import com.walkwalk.data.HikeEntity
 import com.walkwalk.photos.PhotoState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -15,20 +16,30 @@ import java.io.File
 class HikeSender(private val context: Context, private val app: WalkwalkApp) {
     suspend fun build(hike: HikeEntity): File = withContext(Dispatchers.IO) {
         val bundleId = app.repository.ensureBundleId(hike.id)
-        val dir = File(context.cacheDir, "send").apply { mkdirs() }
+        val dir = File(context.cacheDir, "send")
+        // stale bundles can hold photos; keep only the one being built
+        dir.listFiles()?.forEach { it.delete() }
+        dir.mkdirs()
         val file = File(dir, HikeBundle.fileName(hike.name))
         val points = app.repository.points(hike.id)
         val landmarks = app.repository.landmarks(hike.id)
-        file.outputStream().use { out ->
-            HikeBundle.write(out, bundleId, hike.name, points, landmarks) { photo ->
-                try {
-                    // missing or unreadable photos are simply left out of the bundle
-                    if (runBlocking { app.photos.state(photo.uri) } != PhotoState.AVAILABLE) return@write null
-                    PhotoShrinker.shrink(source(Uri.parse(photo.uri)))
-                } catch (e: Exception) {
-                    null
+        try {
+            file.outputStream().use { out ->
+                HikeBundle.write(out, bundleId, hike.name, points, landmarks) { photo ->
+                    try {
+                        // missing or unreadable photos are simply left out of the bundle
+                        if (runBlocking { app.photos.state(photo.uri) } != PhotoState.AVAILABLE) return@write null
+                        PhotoShrinker.shrink(source(Uri.parse(photo.uri)))
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        null
+                    }
                 }
             }
+        } catch (e: Throwable) {
+            file.delete()
+            throw e
         }
         file
     }
