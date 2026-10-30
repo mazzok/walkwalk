@@ -18,6 +18,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.content.FileProvider
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -36,6 +37,7 @@ import com.walkwalk.ui.HikeListScreen
 import com.walkwalk.ui.RecordingScreen
 import com.walkwalk.ui.ReplayScreen
 import com.walkwalk.ui.ReplayViewModel
+import com.walkwalk.ui.landmarks.LandmarksViewModel
 import com.walkwalk.ui.rememberPermissionFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -148,6 +150,9 @@ class MainActivity : ComponentActivity() {
                 )
             }
             composable(RECORDING) {
+                val live by app.recording.state.collectAsState()
+                // exists only while a hike is live; the unfinished-hike prompt needs no landmarks
+                val landmarks = live?.hikeId?.let { landmarksFor(it) }
                 RecordingScreen(
                     controller = app.recording,
                     repo = app.repository,
@@ -171,12 +176,13 @@ class MainActivity : ComponentActivity() {
                             nav.navigate("replay/$id")
                         }
                     },
+                    landmarks = landmarks,
                 )
             }
             composable("replay/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
                 val id = entry.arguments!!.getLong("id")
                 val vm = viewModel(key = "replay-$id") { ReplayViewModel(app.repository, id) }
-                ReplayScreen(vm, onBack = { nav.popBackStack(LIST, inclusive = false) }, onCorrectAltitude = {
+                ReplayScreen(vm, landmarksFor(id), onBack = { nav.popBackStack(LIST, inclusive = false) }, onCorrectAltitude = {
                     scope.launch {
                         val ok = app.corrector.correct(id)
                         vm.reload()
@@ -186,6 +192,10 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    @androidx.compose.runtime.Composable
+    private fun landmarksFor(hikeId: Long): LandmarksViewModel =
+        viewModel(key = "landmarks-$hikeId") { LandmarksViewModel(app.repository, app.photos, hikeId, createSavedStateHandle()) }
 
     private suspend fun importGpx(uri: Uri, nav: NavHostController, snackbar: SnackbarHostState) {
         val id = try {

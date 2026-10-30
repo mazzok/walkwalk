@@ -15,6 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -48,6 +50,9 @@ import com.walkwalk.data.HikeEntity
 import com.walkwalk.data.HikeRepository
 import com.walkwalk.data.HikeStatus
 import com.walkwalk.map.TopoMap
+import com.walkwalk.ui.landmarks.LandmarkLayer
+import com.walkwalk.ui.landmarks.LandmarkMapArgs
+import com.walkwalk.ui.landmarks.LandmarksViewModel
 import com.walkwalk.recording.RecordingController
 import kotlinx.coroutines.delay
 
@@ -74,6 +79,7 @@ fun RecordingScreen(
     onStop: () -> Unit,
     onContinueUnfinished: () -> Unit,
     onSaveUnfinished: (Long) -> Unit,
+    landmarks: LandmarksViewModel?,
 ) {
     val context = LocalContext.current
     val state by controller.state.collectAsState()
@@ -118,7 +124,11 @@ fun RecordingScreen(
     // elapsed keeps ticking between fixes while recording
     val elapsed = s.elapsedMs + if (recording && last != null) (now - last.time).coerceIn(0, 60_000) else 0
 
-    Box(Modifier.fillMaxSize()) {
+    // the picker needs the hike's start time; a live hike always has times
+    val hike by produceState<HikeEntity?>(null, s.hikeId) { value = repo.hike(s.hikeId) }
+
+    @Composable
+    fun Screen(args: LandmarkMapArgs?) = Box(Modifier.fillMaxSize()) {
         TopoMap(
             modifier = Modifier.fillMaxSize(),
             track = s.track,
@@ -127,6 +137,12 @@ fun RecordingScreen(
             fitTrackOnFirstLayout = false,
             initialCenter = if (last == null) lastKnown else null,
             onUserPan = { follow = false },
+            landmarks = args?.landmarks.orEmpty(),
+            selectedLandmarkId = args?.selectedLandmarkId,
+            onLandmarkClick = args?.onLandmarkClick ?: {},
+            onMapClick = args?.onMapClick ?: {},
+            onLongPress = args?.onLongPress,
+            selectedOverlay = args?.selectedOverlay,
         )
         Column(Modifier.safeDrawingPadding().padding(12.dp).fillMaxWidth()) {
             Card(Modifier.fillMaxWidth()) {
@@ -175,11 +191,22 @@ fun RecordingScreen(
                 }
             }
         }
-        if (!follow) {
-            SmallFloatingActionButton(
-                onClick = { follow = true },
-                modifier = Modifier.align(Alignment.CenterEnd).padding(12.dp),
-            ) { Icon(Icons.Default.MyLocation, contentDescription = "Re-centre") }
+        Column(
+            Modifier.align(Alignment.CenterEnd).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (landmarks != null) {
+                SmallFloatingActionButton(
+                    // no fix yet means nowhere to put the pin
+                    onClick = { last?.let { landmarks.addHere(it.lat, it.lon, it.time) } },
+                    containerColor = if (last != null) FloatingActionButtonDefaults.containerColor else MaterialTheme.colorScheme.surfaceVariant,
+                ) { Icon(Icons.Default.PushPin, contentDescription = "Add landmark here") }
+            }
+            if (!follow) {
+                SmallFloatingActionButton(onClick = { follow = true }) {
+                    Icon(Icons.Default.MyLocation, contentDescription = "Re-centre")
+                }
+            }
         }
         Card(Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(12.dp).fillMaxWidth()) {
             Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -193,6 +220,12 @@ fun RecordingScreen(
                 ) { Text("Stop") }
             }
         }
+    }
+
+    if (landmarks != null) {
+        LandmarkLayer(landmarks, hike, canCamera = s.status == HikeStatus.RECORDING || s.status == HikeStatus.PAUSED) { Screen(it) }
+    } else {
+        Screen(null)
     }
 
     if (confirmStop) {

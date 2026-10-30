@@ -32,10 +32,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.walkwalk.map.TopoMap
+import com.walkwalk.ui.landmarks.LandmarkLayer
+import com.walkwalk.ui.landmarks.LandmarksViewModel
 
 /** Replay layout B: full-screen map, floating numbers at the top, profile and scrubber at the bottom. */
 @Composable
-fun ReplayScreen(vm: ReplayViewModel, onBack: () -> Unit, onCorrectAltitude: () -> Unit) {
+fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () -> Unit, onCorrectAltitude: () -> Unit) {
     val hike by vm.hike.collectAsState()
     val points by vm.points.collectAsState()
     val frame by vm.frame.collectAsState()
@@ -47,7 +49,7 @@ fun ReplayScreen(vm: ReplayViewModel, onBack: () -> Unit, onCorrectAltitude: () 
     val stopPositions by vm.stopPositions.collectAsState()
     var expanded by remember { mutableStateOf(false) }
 
-    Box(Modifier.fillMaxSize()) {
+    LandmarkLayer(landmarks, hike, canCamera = false) { args -> Box(Modifier.fillMaxSize()) {
         TopoMap(
             modifier = Modifier.fillMaxSize(),
             track = points,
@@ -55,6 +57,12 @@ fun ReplayScreen(vm: ReplayViewModel, onBack: () -> Unit, onCorrectAltitude: () 
             follow = false,
             fitTrackOnFirstLayout = true,
             stopMarkers = stopPositions,
+            landmarks = args.landmarks,
+            selectedLandmarkId = args.selectedLandmarkId,
+            onLandmarkClick = args.onLandmarkClick,
+            onMapClick = args.onMapClick,
+            onLongPress = args.onLongPress,
+            selectedOverlay = args.selectedOverlay,
         )
 
         val h = hike
@@ -129,5 +137,5 @@ fun ReplayScreen(vm: ReplayViewModel, onBack: () -> Unit, onCorrectAltitude: () 
                 }
             }
         }
-    }
+    } }
 }
