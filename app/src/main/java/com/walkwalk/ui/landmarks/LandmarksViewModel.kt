@@ -11,7 +11,10 @@ import com.walkwalk.photos.GalleryPhoto
 import com.walkwalk.photos.PhotoAccess
 import com.walkwalk.photos.PhotoState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +23,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The subset of PhotoStore the view model uses, so tests can fake it. */
 interface Photos {
@@ -50,19 +54,28 @@ class LandmarksViewModel(
     private val _menuOpenFor = MutableStateFlow<Long?>(null)
     val menuOpenFor: StateFlow<Long?> = _menuOpenFor
 
+    private val refreshTick = MutableStateFlow(0)
+
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    /** One-shot user messages for a snackbar. */
+    val messages: SharedFlow<String> = _messages
+
     /** Selected landmark's photos with their live state; re-resolved whenever selection or its photos change. */
-    val thumbs: StateFlow<List<Thumb>> = combine(landmarks, _selectedId) { lms, id ->
-        lms.firstOrNull { it.id == id }?.photos.orEmpty()
-    }.distinctUntilChanged().mapLatest { list ->
+    val thumbs: StateFlow<List<Thumb>> = combine(landmarks, _selectedId, refreshTick) { lms, id, tick ->
+        lms.firstOrNull { it.id == id }?.photos.orEmpty() to tick // tick in the key so refresh() re-resolves
+    }.distinctUntilChanged().mapLatest { (list, _) ->
         list.map { Thumb(it.id, it.uri, safeState(it.uri)) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Re-resolves photo states, e.g. after the user granted access or the app resumed. */
+    fun refresh() { refreshTick.value++ }
 
     private suspend fun safeState(uri: String): PhotoState = try {
         photos.state(uri)
     } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {
-        PhotoState.MISSING // a lookup must never crash the UI
+        PhotoState.UNREADABLE // a lookup must never crash the UI; unknown is not "gone", so never offer Remove
     }
 
     fun select(id: Long?) {
@@ -103,9 +116,14 @@ class LandmarksViewModel(
         viewModelScope.launch { repo.attachPhotos(landmarkId, picked.map { it.uri to it.takenAt }) }
     }
 
-    /** Saved so the photo still lands on the right landmark if the process dies while the camera is open. */
-    fun startCamera(landmarkId: Long): Uri {
-        val target = photos.newCameraTarget()
+    /** Saved so the photo still lands on the right landmark if the process dies while the camera is open. Null when no target could be created. */
+    fun startCamera(landmarkId: Long): Uri? {
+        val target = try {
+            photos.newCameraTarget()
+        } catch (e: Exception) {
+            _messages.tryEmit("Couldn't open the camera")
+            return null
+        }
         savedState[KEY_LANDMARK] = landmarkId
         savedState[KEY_URI] = target.toString()
         return target
@@ -117,11 +135,18 @@ class LandmarksViewModel(
         savedState.remove<Long>(KEY_LANDMARK)
         savedState.remove<String>(KEY_URI)
         if (landmarkId == null || uri == null) return
-        if (success) {
-            photos.commitCameraTarget(uri)
-            attach(landmarkId, listOf(GalleryPhoto(uri.toString(), System.currentTimeMillis())))
-        } else {
-            photos.discardCameraTarget(uri)
+        viewModelScope.launch {
+            val committed = withContext(Dispatchers.IO) {
+                try {
+                    if (success) photos.commitCameraTarget(uri) else photos.discardCameraTarget(uri)
+                    success
+                } catch (e: Exception) {
+                    if (success) runCatching { photos.discardCameraTarget(uri) }
+                    if (success) _messages.tryEmit("Couldn't save the photo")
+                    false
+                }
+            }
+            if (committed) repo.attachPhotos(landmarkId, listOf(uri.toString() to System.currentTimeMillis()))
         }
     }
 

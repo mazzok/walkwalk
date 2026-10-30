@@ -1,5 +1,6 @@
 package com.walkwalk.ui.landmarks
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -56,6 +57,7 @@ fun PhotoViewer(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class) // transformable(canPan) so one-finger swipes reach the pager at scale 1
 @Composable
 private fun ZoomableImage(uri: String) {
     val bitmap = rememberBitmap(uri, 1600)
@@ -65,7 +67,7 @@ private fun ZoomableImage(uri: String) {
         scale = (scale * zoom).coerceIn(1f, 5f)
         offset = if (scale == 1f) Offset.Zero else offset + pan
     }
-    Box(Modifier.fillMaxSize().transformable(state), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().transformable(state, canPan = { scale > 1f }), contentAlignment = Alignment.Center) {
         val b = bitmap
         if (b != null) {
             Image(

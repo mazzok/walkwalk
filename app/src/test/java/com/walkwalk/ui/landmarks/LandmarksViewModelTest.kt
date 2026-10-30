@@ -9,7 +9,9 @@ import com.walkwalk.data.WalkwalkDb
 import com.walkwalk.photos.GalleryPhoto
 import com.walkwalk.photos.PhotoAccess
 import com.walkwalk.photos.PhotoState
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -27,14 +29,26 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 private class FakePhotos : Photos {
-    val states = mutableMapOf<String, PhotoState>()
-    val committed = mutableListOf<Uri>()
-    val discarded = mutableListOf<Uri>()
+    val states = java.util.concurrent.ConcurrentHashMap<String, PhotoState>()
+    val throwingStates = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    val committed = java.util.concurrent.CopyOnWriteArrayList<Uri>() // camera I/O runs on Dispatchers.IO
+    val discarded = java.util.concurrent.CopyOnWriteArrayList<Uri>()
+    @Volatile var failInsert = false
+    @Volatile var failCommit = false
     override fun access() = PhotoAccess.FULL
     override suspend fun takenBetween(from: Long, to: Long) = emptyList<GalleryPhoto>()
-    override suspend fun state(uri: String) = states[uri] ?: PhotoState.AVAILABLE
-    override fun newCameraTarget(): Uri = Uri.parse("content://media/external/images/media/99")
-    override fun commitCameraTarget(uri: Uri) { committed += uri }
+    override suspend fun state(uri: String): PhotoState {
+        if (uri in throwingStates) error("provider exploded")
+        return states[uri] ?: PhotoState.AVAILABLE
+    }
+    override fun newCameraTarget(): Uri {
+        if (failInsert) error("could not create camera target")
+        return Uri.parse("content://media/external/images/media/99")
+    }
+    override fun commitCameraTarget(uri: Uri) {
+        if (failCommit) error("commit failed")
+        committed += uri
+    }
     override fun discardCameraTarget(uri: Uri) { discarded += uri }
 }
 
@@ -119,8 +133,9 @@ class LandmarksViewModelTest {
         val vm = vm(hike)
         val p = GalleryPhoto("content://a", 1L)
         vm.attach(lm, listOf(p)); settle { repo.landmarks(hike).single().photos.size == 1 }
-        vm.attach(lm, listOf(p)); advanceUntilIdle(); Thread.sleep(100); advanceUntilIdle()
-        assertEquals(1, repo.landmarks(hike).single().photos.size)
+        // the duplicate is skipped, the new one lands: exactly 2 once settled
+        vm.attach(lm, listOf(p, GalleryPhoto("content://b", 2L))); settle { repo.landmarks(hike).single().photos.size >= 2 }
+        assertEquals(listOf("content://a", "content://b"), repo.landmarks(hike).single().photos.map { it.uri })
     }
 
     @Test
@@ -130,7 +145,7 @@ class LandmarksViewModelTest {
         val vm = vm(hike)
         val uri = vm.startCamera(lm)
         vm.onCameraResult(false)
-        advanceUntilIdle(); Thread.sleep(100); advanceUntilIdle()
+        settle { photos.discarded.isNotEmpty() }
         assertEquals(listOf(uri), photos.discarded)
         assertTrue(repo.landmarks(hike).single().photos.isEmpty())
     }
@@ -162,5 +177,62 @@ class LandmarksViewModelTest {
         settle { repo.landmarks(hike).isEmpty() }
         assertTrue(repo.landmarks(hike).isEmpty())
         assertNull(vm.selectedId.value)
+    }
+
+    @Test
+    fun refreshReResolvesChangedState() = runTest {
+        val hike = repo.startHike(0)
+        val lm = repo.addLandmark(hike, 47.0, 8.0, null)
+        repo.attachPhotos(lm, listOf("content://a" to 1L))
+        photos.states["content://a"] = PhotoState.UNREADABLE
+        val vm = vm(hike)
+        vm.select(lm)
+        settle { vm.thumbs.value.map { it.state } == listOf(PhotoState.UNREADABLE) }
+        photos.states["content://a"] = PhotoState.AVAILABLE
+        vm.refresh()
+        settle { vm.thumbs.value.map { it.state } == listOf(PhotoState.AVAILABLE) }
+    }
+
+    @Test
+    fun insertFailureReturnsNullAndEmitsMessage() = runTest {
+        val hike = repo.startHike(0)
+        val lm = repo.addLandmark(hike, 47.0, 8.0, null)
+        val vm = vm(hike)
+        photos.failInsert = true
+        val got = mutableListOf<String>()
+        val job = launch(start = CoroutineStart.UNDISPATCHED) { vm.messages.collect { got += it } }
+        assertNull(vm.startCamera(lm))
+        advanceUntilIdle()
+        assertEquals(listOf("Couldn't open the camera"), got)
+        vm.onCameraResult(true) // nothing saved: no-op, no crash
+        job.cancel()
+    }
+
+    @Test
+    fun failedCommitDiscardsAndEmitsMessage() = runTest {
+        val hike = repo.startHike(0)
+        val lm = repo.addLandmark(hike, 47.0, 8.0, null)
+        val vm = vm(hike)
+        val uri = vm.startCamera(lm)
+        photos.failCommit = true
+        val got = mutableListOf<String>()
+        val job = launch(start = CoroutineStart.UNDISPATCHED) { vm.messages.collect { got += it } }
+        vm.onCameraResult(true)
+        settle { photos.discarded.isNotEmpty() && got.isNotEmpty() }
+        assertEquals(listOf(uri), photos.discarded)
+        assertTrue(repo.landmarks(hike).single().photos.isEmpty())
+        job.cancel()
+    }
+
+    @Test
+    fun lookupFailureMapsToUnreadable() = runTest {
+        val hike = repo.startHike(0)
+        val lm = repo.addLandmark(hike, 47.0, 8.0, null)
+        repo.attachPhotos(lm, listOf("content://a" to 1L))
+        photos.throwingStates += "content://a"
+        val vm = vm(hike)
+        vm.select(lm)
+        settle { vm.thumbs.value.isNotEmpty() }
+        assertEquals(listOf(PhotoState.UNREADABLE), vm.thumbs.value.map { it.state })
     }
 }

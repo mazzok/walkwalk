@@ -56,6 +56,7 @@ fun HikePhotoPicker(window: LongRange, vm: LandmarksViewModel, landmarkId: Long,
 
     val allowMore = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         access = vm.photoAccess()
+        vm.refresh()
         reload++ // the selection screen may have granted more photos
     }
     val photos by produceState<List<GalleryPhoto>?>(null, window, reload) { value = vm.pickerPhotos(window) }
@@ -86,6 +87,7 @@ fun HikePhotoPicker(window: LongRange, vm: LandmarksViewModel, landmarkId: Long,
                 val list = photos
                 when {
                     list == null -> Unit
+                    list.isEmpty() && access == PhotoAccess.NONE -> Unit // the access hint above is the whole story
                     list.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("No photos taken during this hike")
                     }
