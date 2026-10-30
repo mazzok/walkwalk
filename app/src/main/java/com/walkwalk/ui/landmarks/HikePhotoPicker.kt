@@ -67,8 +67,7 @@ fun HikePhotoPicker(window: LongRange, vm: LandmarksViewModel, landmarkId: Long,
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Photos from this hike", Modifier.weight(1f).padding(start = 8.dp))
                     Button(onClick = {
-                        val fresh = photos.orEmpty().filter { it.uri in ticked && it.uri !in already }
-                        vm.attach(landmarkId, fresh)
+                        vm.applyPicker(landmarkId, ticked.toSet(), photos.orEmpty())
                         onDone()
                     }) { Text("Done") }
                 }

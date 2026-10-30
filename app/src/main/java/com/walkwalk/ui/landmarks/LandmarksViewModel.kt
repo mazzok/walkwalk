@@ -116,6 +116,17 @@ class LandmarksViewModel(
         viewModelScope.launch { repo.attachPhotos(landmarkId, picked.map { it.uri to it.takenAt }) }
     }
 
+    /** Picker Done: attaches newly ticked [available] photos and removes attached ones that were unticked. */
+    fun applyPicker(landmarkId: Long, ticked: Set<String>, available: List<GalleryPhoto>) {
+        viewModelScope.launch {
+            val current = repo.landmarks(hikeId).firstOrNull { it.id == landmarkId }?.photos.orEmpty()
+            current.filter { it.uri !in ticked }.forEach { repo.removePhoto(it.id) }
+            val have = current.map { it.uri }.toSet()
+            val fresh = available.filter { it.uri in ticked && it.uri !in have }
+            if (fresh.isNotEmpty()) repo.attachPhotos(landmarkId, fresh.map { it.uri to it.takenAt })
+        }
+    }
+
     /** Saved so the photo still lands on the right landmark if the process dies while the camera is open. Null when no target could be created. */
     fun startCamera(landmarkId: Long): Uri? {
         val target = try {

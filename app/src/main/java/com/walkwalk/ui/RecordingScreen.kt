@@ -198,7 +198,8 @@ fun RecordingScreen(
             if (landmarks != null) {
                 SmallFloatingActionButton(
                     // no fix yet means nowhere to put the pin
-                    onClick = { last?.let { landmarks.addHere(it.lat, it.lon, it.time) } },
+                    // re-centre too: the menu hangs off the pin, which is hidden while the fix is off screen
+                    onClick = { last?.let { follow = true; landmarks.addHere(it.lat, it.lon, it.time) } },
                     containerColor = if (last != null) FloatingActionButtonDefaults.containerColor else MaterialTheme.colorScheme.surfaceVariant,
                 ) { Icon(Icons.Default.PushPin, contentDescription = "Add landmark here") }
             }

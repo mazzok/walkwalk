@@ -35,14 +35,14 @@ open class PhotoStore(private val context: Context) : Photos {
 
     /** Gallery photos taken within [from, to] (epoch ms), newest first. */
     override suspend fun takenBetween(from: Long, to: Long): List<GalleryPhoto> = withContext(Dispatchers.IO) {
-        val takenExpr = "COALESCE(${MediaStore.Images.Media.DATE_TAKEN}, ${MediaStore.Images.Media.DATE_ADDED} * 1000)"
+        val (selection, args) = takenBetweenQuery(from, to)
         val out = mutableListOf<GalleryPhoto>()
         try {
             context.contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATE_TAKEN, MediaStore.Images.Media.DATE_ADDED),
-                "$takenExpr BETWEEN ? AND ?",
-                arrayOf(from.toString(), to.toString()),
+                selection,
+                args,
                 null, // ordered in Kotlin below: an arithmetic sortOrder can be rejected by MediaProvider's SQL checker
             )?.use { c ->
                 while (c.moveToNext()) {
@@ -53,6 +53,10 @@ open class PhotoStore(private val context: Context) : Photos {
             }
         } catch (_: SecurityException) {
             // no gallery access: nothing to suggest
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: RuntimeException) {
+            // the provider rejected the query: nothing to suggest rather than a crash
         }
         out.sortedByDescending { it.takenAt }
     }
@@ -109,6 +113,17 @@ open class PhotoStore(private val context: Context) : Photos {
     }
 
     companion object {
+        /**
+         * Plain columns, not COALESCE(...): a computed expression has no integer affinity, so the string
+         * args would compare greater than every number and nothing would match.
+         */
+        internal fun takenBetweenQuery(from: Long, to: Long): Pair<String, Array<String>> {
+            val taken = MediaStore.Images.Media.DATE_TAKEN
+            val added = MediaStore.Images.Media.DATE_ADDED
+            return "($taken BETWEEN ? AND ?) OR ($taken IS NULL AND $added BETWEEN ? AND ?)" to
+                arrayOf(from.toString(), to.toString(), (from / 1000).toString(), (to / 1000).toString())
+        }
+
         fun takenAt(dateTakenMs: Long?, dateAddedSec: Long): Long = dateTakenMs ?: (dateAddedSec * 1000)
 
         fun decideState(found: Boolean, access: PhotoAccess, isPrivateFile: Boolean): PhotoState = when {

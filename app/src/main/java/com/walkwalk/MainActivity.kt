@@ -2,6 +2,7 @@ package com.walkwalk
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import android.os.Bundle
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
@@ -234,11 +235,11 @@ class MainActivity : ComponentActivity() {
                 when (importKind(head)) {
                     ImportKind.BUNDLE -> {
                         val open = { contentResolver.openInputStream(uri) ?: throw IOException("cannot open") }
-                        BundleImporter(app.repository, app.photos).import(open, fallbackName) to false
+                        BundleImporter(app.repository, app.photos).import(open, fallbackName).let { it.hikeId to false to it.existing }
                     }
                     ImportKind.GPX -> {
                         val parsed = contentResolver.openInputStream(uri)?.use { GpxParser.parse(it) } ?: throw IOException("cannot open")
-                        app.repository.importGpx(parsed, fallbackName) to true
+                        app.repository.importGpx(parsed, fallbackName) to true to false
                     }
                 }
             }
@@ -252,13 +253,15 @@ class MainActivity : ComponentActivity() {
             snackbar.showSnackbar("Not a readable GPX or walkwalk file")
             return
         }
-        val (id, isGpx) = result
+        val (idAndGpx, existing) = result
+        val (id, isGpx) = idAndGpx
         if (isGpx) app.appScope.launch { app.corrector.correct(id) }
         nav.navigate("replay/$id")
+        if (existing) snackbar.showSnackbar("You already have this hike") // last: it suspends until dismissed
     }
 
     private suspend fun sendHike(hike: HikeEntity, snackbar: SnackbarHostState, confirm: (File) -> Unit) {
-        val file = try {
+        val sent = try {
             HikeSender(this, app).build(hike)
         } catch (e: CancellationException) {
             throw e
@@ -266,6 +269,10 @@ class MainActivity : ComponentActivity() {
             snackbar.showSnackbar("Couldn't prepare the hike for sending")
             return
         }
+        val file = sent.file
+        val size = "%.1f MB".format(Locale.US, file.length() / 1_048_576.0)
+        val left = if (sent.skipped > 0) " · ${sent.skipped} photo${if (sent.skipped == 1) "" else "s"} couldn't be included" else ""
+        Toast.makeText(this, "${file.name} · $size$left", Toast.LENGTH_LONG).show()
         if (file.length() > HikeBundle.WARN_BYTES) confirm(file) else launchSend(file)
     }
 

@@ -49,7 +49,8 @@ fun LandmarkLayer(
     val selectedId by vm.selectedId.collectAsState()
     val menuFor by vm.menuOpenFor.collectAsState()
     val thumbs by vm.thumbs.collectAsState()
-    var pickerFor by remember { mutableStateOf<Long?>(null) }
+    // the window is fixed when the picker opens, so a live hike's clock doesn't re-query MediaStore every second
+    var picker by remember { mutableStateOf<Pair<Long, LongRange>?>(null) }
     var viewerStart by remember { mutableStateOf<Int?>(null) }
     val snackbar = remember { SnackbarHostState() }
 
@@ -63,7 +64,7 @@ fun LandmarkLayer(
     // nothing left to show (landmark deleted, photos removed): don't keep a stale viewer around
     LaunchedEffect(thumbs.isEmpty()) { if (thumbs.isEmpty()) viewerStart = null }
 
-    val window = hike?.let { vm.pickerWindow(it, System.currentTimeMillis()) }
+    val canPick = hike?.let { vm.pickerWindow(it, 0) } != null
 
     val args = LandmarkMapArgs(
         landmarks = landmarks,
@@ -78,13 +79,16 @@ fun LandmarkLayer(
                 LandmarkMenu(
                     expanded = menuFor == id,
                     canCamera = canCamera,
-                    canPick = window != null,
+                    canPick = canPick,
                     onCamera = {
                         vm.closeMenu()
                         // null: the view model already told the user why; never launch without a target
                         vm.startCamera(id)?.let { camera.launch(it) }
                     },
-                    onPick = { vm.closeMenu(); pickerFor = id },
+                    onPick = {
+                        vm.closeMenu()
+                        hike?.let { h -> vm.pickerWindow(h, System.currentTimeMillis()) }?.let { w -> picker = id to w }
+                    },
                     onDelete = { vm.delete(id) },
                     onDismiss = vm::closeMenu,
                 )
@@ -97,9 +101,8 @@ fun LandmarkLayer(
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 88.dp))
     }
 
-    val picking = pickerFor
-    if (picking != null && window != null) {
-        HikePhotoPicker(window, vm, picking, onDone = { pickerFor = null })
+    picker?.let { (id, window) ->
+        HikePhotoPicker(window, vm, id, onDone = { picker = null })
     }
     viewerStart?.let { start ->
         PhotoViewer(

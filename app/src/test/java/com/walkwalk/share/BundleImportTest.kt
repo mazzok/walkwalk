@@ -54,20 +54,22 @@ class BundleImportTest {
         val bytes = bundle()
         val a = importer.import({ ByteArrayInputStream(bytes) }, "fb")
         val b = importer.import({ ByteArrayInputStream(bytes) }, "fb")
-        assertEquals(a, b)
+        assertFalse(a.existing)
+        assertTrue(b.existing)
+        assertEquals(a.hikeId, b.hikeId)
         assertEquals(1, repo.finishedHikes().size)
     }
 
     @Test fun deleteThenReimport() = runTest {
         val bytes = bundle()
-        val a = importer.import({ ByteArrayInputStream(bytes) }, "fb")
+        val a = importer.import({ ByteArrayInputStream(bytes) }, "fb").hikeId
         val uri = repo.landmarks(a).single().photos.single().uri
         assertTrue(uri.startsWith("file:"))
         assertTrue(File(URI(uri)).exists())
         assertEquals(photos.privateDir(a), File(URI(uri)).parentFile)
         repo.delete(a); photos.deletePrivate(a)
         assertFalse(photos.privateDir(a).exists())
-        val b = importer.import({ ByteArrayInputStream(bytes) }, "fb")
+        val b = importer.import({ ByteArrayInputStream(bytes) }, "fb").hikeId
         assertNotEquals(a, b)
         assertTrue(File(URI(repo.landmarks(b).single().photos.single().uri)).exists())
     }
@@ -89,7 +91,7 @@ class BundleImportTest {
         assertEquals(null, repo.hikeByBundleId("bundle-1"))
         File(root, "blocked").delete()
 
-        val id = importer.import({ ByteArrayInputStream(bytes) }, "fb")
+        val id = importer.import({ ByteArrayInputStream(bytes) }, "fb").hikeId
         assertEquals(1, repo.finishedHikes().size)
         assertTrue(File(URI(repo.landmarks(id).single().photos.single().uri)).exists())
     }

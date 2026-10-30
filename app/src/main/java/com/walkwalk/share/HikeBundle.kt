@@ -41,25 +41,28 @@ object HikeBundle {
         out: OutputStream, bundleId: String, name: String, points: List<TrackPoint>, landmarks: List<Landmark>,
         photo: (LandmarkPhotoEntity) -> ByteArray?,
     ) {
-        val photoFiles = mutableListOf<Pair<String, ByteArray>>()
-        val waypoints = landmarks.map { lm ->
-            val links = lm.photos.mapNotNull { p ->
-                photo(p)?.let { bytes -> "photos/${photoFiles.size + 1}.jpg".also { photoFiles += it to bytes } }
-            }
-            GpxWaypoint(lm.lat, lm.lon, lm.time, links)
-        }
         ZipOutputStream(out).use { zip ->
             zip.putNextEntry(ZipEntry(META))
             zip.write(JSONObject().put("bundleId", bundleId).put("format", 1).toString().toByteArray())
             zip.closeEntry()
+            // each photo is streamed into the zip as soon as it is shrunk, so no more than one is held in memory;
+            // hike.gpx comes last because its links depend on which photos succeeded (the reader ignores entry order)
+            var count = 0
+            val waypoints = landmarks.map { lm ->
+                val links = lm.photos.mapNotNull { p ->
+                    photo(p)?.let { bytes ->
+                        "photos/${++count}.jpg".also { entry ->
+                            zip.putNextEntry(ZipEntry(entry))
+                            zip.write(bytes)
+                            zip.closeEntry()
+                        }
+                    }
+                }
+                GpxWaypoint(lm.lat, lm.lon, lm.time, links)
+            }
             zip.putNextEntry(ZipEntry(GPX))
             GpxWriter.write(name, points, zip, waypoints) // flushes, does not close
             zip.closeEntry()
-            for ((entry, bytes) in photoFiles) {
-                zip.putNextEntry(ZipEntry(entry))
-                zip.write(bytes)
-                zip.closeEntry()
-            }
         }
     }
 
@@ -109,12 +112,15 @@ object HikeBundle {
     }
 }
 
+/** [existing] is true when the bundle was already here and nothing was imported. */
+data class ImportResult(val hikeId: Long, val existing: Boolean)
+
 class BundleImporter(private val repo: HikeRepository, private val photos: PhotoStore) {
 
-    /** Returns the existing hike's id when this bundle was imported (or exported) here before. */
-    suspend fun import(input: () -> InputStream, fallbackName: String): Long = withContext(Dispatchers.IO) {
+    /** Returns the existing hike (existing = true) when this bundle was imported (or exported) here before. */
+    suspend fun import(input: () -> InputStream, fallbackName: String): ImportResult = withContext(Dispatchers.IO) {
         val bundleId = input().use { HikeBundle.peekBundleId(it) }
-        repo.hikeByBundleId(bundleId)?.let { return@withContext it.id }
+        repo.hikeByBundleId(bundleId)?.let { return@withContext ImportResult(it.id, true) }
 
         // the new hike id is unknown while streaming, so photos land in a staging dir and move once it exists
         val staging = File(photos.privateDir(0).parentFile, ".import-${UUID.randomUUID()}")
@@ -128,7 +134,7 @@ class BundleImporter(private val repo: HikeRepository, private val photos: Photo
                     Uri.fromFile(file).toString()
                 }
             }
-            repo.importBundle(bundle, fallbackName) { id ->
+            val id = repo.importBundle(bundle, fallbackName) { id ->
                 hikeId = id
                 if (bundle.photoUris.isEmpty()) emptyMap() else {
                     val target = photos.privateDir(id)
@@ -138,6 +144,7 @@ class BundleImporter(private val repo: HikeRepository, private val photos: Photo
                     bundle.photoUris.mapValues { (_, uri) -> Uri.fromFile(File(target, File(Uri.parse(uri).path!!).name)).toString() }
                 }
             }
+            ImportResult(id, false)
         } catch (e: Throwable) {
             hikeId?.let { photos.deletePrivate(it) }
             throw e

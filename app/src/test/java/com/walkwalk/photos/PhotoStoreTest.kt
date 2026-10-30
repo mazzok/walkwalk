@@ -26,6 +26,21 @@ class PhotoStoreTest {
         assertEquals(PhotoState.UNREADABLE, d(false, PhotoAccess.NONE, false))
     }
 
+    @Test fun takenBetweenSelectionMatchesWithStringArgs() {
+        val db = android.database.sqlite.SQLiteDatabase.create(null)
+        db.execSQL("CREATE TABLE images (_id INTEGER, datetaken INTEGER, date_added INTEGER)")
+        db.execSQL("INSERT INTO images VALUES (1, 5000, 5)")       // taken inside
+        db.execSQL("INSERT INTO images VALUES (2, NULL, 6)")       // added inside (6000 ms)
+        db.execSQL("INSERT INTO images VALUES (3, 20000, 20)")     // taken outside
+        db.execSQL("INSERT INTO images VALUES (4, NULL, 30)")      // added outside
+        db.execSQL("INSERT INTO images VALUES (5, 1000, 7)")       // taken outside, added inside: DATE_TAKEN wins
+        val (sel, args) = PhotoStore.takenBetweenQuery(4_000, 8_000)
+        val ids = db.rawQuery("SELECT _id FROM images WHERE $sel ORDER BY _id", args).use { c ->
+            generateSequence { if (c.moveToNext()) c.getLong(0) else null }.toList()
+        }
+        assertEquals(listOf(1L, 2L), ids)
+    }
+
     @Test fun privateDirIsPerHike() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = PhotoStore(context)

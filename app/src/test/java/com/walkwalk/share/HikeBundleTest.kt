@@ -48,6 +48,16 @@ class HikeBundleTest {
         assertEquals(0, r.gpx.waypoints[1].links.size)
     }
 
+    @Test fun photosAreWrittenBeforeGpxAndPeekStillWorks() {
+        val lms = listOf(Landmark(1, 47.0, 11.0, null, listOf(photo(1, 1))))
+        val bos = ByteArrayOutputStream()
+        HikeBundle.write(bos, "b1", "Hike", straightLine(1.25, 2000, 3), lms) { byteArrayOf(7) }
+        val names = mutableListOf<String>()
+        ZipInputStream(ByteArrayInputStream(bos.toByteArray())).use { z -> generateSequence { z.nextEntry }.forEach { names += it.name } }
+        assertEquals(listOf("walkwalk.json", "photos/1.jpg", "hike.gpx"), names)
+        assertEquals("b1", HikeBundle.peekBundleId(ByteArrayInputStream(bos.toByteArray())))
+    }
+
     @Test fun missingPhotoLeftOut() {
         val lms = listOf(Landmark(1, 47.0, 11.0, null, listOf(photo(1, 1), photo(2, 1))))
         val bos = ByteArrayOutputStream()

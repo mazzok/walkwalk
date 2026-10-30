@@ -139,6 +139,18 @@ class LandmarksViewModelTest {
     }
 
     @Test
+    fun applyPickerRemovesUntickedAndAttachesNew() = runTest {
+        val hike = repo.startHike(0)
+        val lm = repo.addLandmark(hike, 47.0, 8.0, null)
+        repo.attachPhotos(lm, listOf("content://a" to 1L, "content://b" to 2L))
+        val vm = vm(hike)
+        val c = GalleryPhoto("content://c", 3L)
+        vm.applyPicker(lm, setOf("content://b", "content://c"), listOf(GalleryPhoto("content://a", 1L), GalleryPhoto("content://b", 2L), c))
+        settle { repo.landmarks(hike).single().photos.map { it.uri }.toSet() == setOf("content://b", "content://c") }
+        assertEquals(setOf("content://b", "content://c"), repo.landmarks(hike).single().photos.map { it.uri }.toSet())
+    }
+
+    @Test
     fun cancelledCameraDiscardsEntry() = runTest {
         val hike = repo.startHike(0)
         val lm = repo.addLandmark(hike, 47.0, 8.0, null)
