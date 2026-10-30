@@ -9,11 +9,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -32,6 +37,11 @@ import com.walkwalk.domain.GpxParser
 import com.walkwalk.domain.GpxWaypoint
 import com.walkwalk.domain.GpxWriter
 import com.walkwalk.recording.RecordingService
+import com.walkwalk.share.BundleImporter
+import com.walkwalk.share.HikeBundle
+import com.walkwalk.share.HikeSender
+import com.walkwalk.share.ImportKind
+import com.walkwalk.share.importKind
 import com.walkwalk.ui.ActiveHike
 import com.walkwalk.ui.HikeListScreen
 import com.walkwalk.ui.RecordingScreen
@@ -45,6 +55,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val app get() = application as WalkwalkApp
@@ -78,6 +89,17 @@ class MainActivity : ComponentActivity() {
         val nav = rememberNavController()
         val snackbar = remember { SnackbarHostState() }
         val scope = rememberCoroutineScope()
+        // a bundle over the email size limit, waiting for the user to confirm sending it
+        var bigSend by remember { mutableStateOf<File?>(null) }
+        bigSend?.let { file ->
+            AlertDialog(
+                onDismissRequest = { bigSend = null },
+                title = { Text("Send hike") },
+                text = { Text("This hike is ${"%.1f".format(Locale.US, file.length() / 1_048_576.0)} MB. Email may refuse files over 25 MB; messengers accept it.") },
+                confirmButton = { TextButton(onClick = { bigSend = null; launchSend(file) }) { Text("Send anyway") } },
+                dismissButton = { TextButton(onClick = { bigSend = null }) { Text("Cancel") } },
+            )
+        }
 
         // An unfinished hike: show it live if still recording, otherwise the screen offers resume or save.
         LaunchedEffect(Unit) {
@@ -90,7 +112,7 @@ class MainActivity : ComponentActivity() {
             incomingGpx.collect { uri ->
                 if (uri != null) {
                     incomingGpx.value = null
-                    importGpx(uri, nav, snackbar)
+                    importFile(uri, nav, snackbar)
                 }
             }
         }
@@ -114,7 +136,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         val pickGpx =rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) scope.launch { importGpx(uri, nav, snackbar) }
+            if (uri != null) scope.launch { importFile(uri, nav, snackbar) }
         }
 
         NavHost(nav, startDestination = LIST) {
@@ -145,8 +167,14 @@ class MainActivity : ComponentActivity() {
                     onStartDemo = if (BuildConfig.DEBUG) startDemo else null,
                     onImport = { pickGpx.launch(arrayOf("*/*")) },
                     onExport = { hike -> scope.launch { exportGpx(hike) } },
+                    onSend = { hike -> scope.launch { sendHike(hike) { bigSend = it } } },
                     onRename = { hike, name -> scope.launch { app.repository.rename(hike.id, name) } },
-                    onDelete = { hike -> scope.launch { app.repository.delete(hike.id) } },
+                    onDelete = { hike ->
+                        scope.launch {
+                            app.repository.delete(hike.id)
+                            app.photos.deletePrivate(hike.id)
+                        }
+                    },
                 )
             }
             composable(RECORDING) {
@@ -197,23 +225,53 @@ class MainActivity : ComponentActivity() {
     private fun landmarksFor(hikeId: Long): LandmarksViewModel =
         viewModel(key = "landmarks-$hikeId") { LandmarksViewModel(app.repository, app.photos, hikeId, createSavedStateHandle()) }
 
-    private suspend fun importGpx(uri: Uri, nav: NavHostController, snackbar: SnackbarHostState) {
-        val id = try {
+    /** Imports a .walkwalk bundle or a GPX file, told apart by the zip magic bytes. */
+    private suspend fun importFile(uri: Uri, nav: NavHostController, snackbar: SnackbarHostState) {
+        val fallbackName = displayName(uri) ?: "Imported hike"
+        val result = try {
             withContext(Dispatchers.IO) {
-                val parsed = contentResolver.openInputStream(uri)?.use { GpxParser.parse(it) } ?: throw IOException("cannot open")
-                app.repository.importGpx(parsed, displayName(uri) ?: "Imported hike")
+                val head = contentResolver.openInputStream(uri)?.use { it.readNBytes(4) } ?: throw IOException("cannot open")
+                when (importKind(head)) {
+                    ImportKind.BUNDLE -> {
+                        val open = { contentResolver.openInputStream(uri) ?: throw IOException("cannot open") }
+                        BundleImporter(app.repository, app.photos).import(open, fallbackName) to false
+                    }
+                    ImportKind.GPX -> {
+                        val parsed = contentResolver.openInputStream(uri)?.use { GpxParser.parse(it) } ?: throw IOException("cannot open")
+                        app.repository.importGpx(parsed, fallbackName) to true
+                    }
+                }
             }
         } catch (e: GpxException) {
             null
         } catch (e: IOException) {
             null
         }
-        if (id == null) {
-            snackbar.showSnackbar("Not a readable GPX file")
+        if (result == null) {
+            snackbar.showSnackbar("Not a readable GPX or walkwalk file")
             return
         }
-        app.appScope.launch { app.corrector.correct(id) }
+        val (id, isGpx) = result
+        if (isGpx) app.appScope.launch { app.corrector.correct(id) }
         nav.navigate("replay/$id")
+    }
+
+    private suspend fun sendHike(hike: HikeEntity, confirm: (File) -> Unit) {
+        val file = try {
+            HikeSender(this, app).build(hike)
+        } catch (e: IOException) {
+            return
+        }
+        if (file.length() > HikeBundle.WARN_BYTES) confirm(file) else launchSend(file)
+    }
+
+    private fun launchSend(file: File) {
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("application/zip")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startActivity(Intent.createChooser(send, "Send hike"))
     }
 
     private fun displayName(uri: Uri): String? =

@@ -67,6 +67,7 @@ fun HikeListScreen(
     onStartDemo: (() -> Unit)?,
     onImport: () -> Unit,
     onExport: (HikeEntity) -> Unit,
+    onSend: (HikeEntity) -> Unit,
     onRename: (HikeEntity, String) -> Unit,
     onDelete: (HikeEntity) -> Unit,
 ) {
@@ -84,7 +85,7 @@ fun HikeListScreen(
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { startOrConfirm(onStartHike) }, modifier = Modifier.weight(1f)) { Text("Start hike") }
                 onStartDemo?.let { OutlinedButton(onClick = { startOrConfirm(it) }) { Text("Demo") } }
-                OutlinedButton(onClick = onImport) { Text("Import GPX") }
+                OutlinedButton(onClick = onImport) { Text("Import") }
             }
         },
     ) { padding ->
@@ -97,7 +98,7 @@ fun HikeListScreen(
             } else {
                 LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
                     items(hikes, key = { it.id }) { hike ->
-                        HikeRow(hike, onClick = { onOpen(hike.id) }, onRename = { renaming = hike }, onExport = { onExport(hike) }, onDelete = { deleting = hike })
+                        HikeRow(hike, onClick = { onOpen(hike.id) }, onRename = { renaming = hike }, onExport = { onExport(hike) }, onSend = { onSend(hike) }, onDelete = { deleting = hike })
                         HorizontalDivider()
                     }
                 }
@@ -163,7 +164,7 @@ private fun ActiveHikeCard(hike: ActiveHike, onClick: () -> Unit) {
 }
 
 @Composable
-private fun HikeRow(hike: HikeEntity, onClick: () -> Unit, onRename: () -> Unit, onExport: () -> Unit, onDelete: () -> Unit) {
+private fun HikeRow(hike: HikeEntity, onClick: () -> Unit, onRename: () -> Unit, onExport: () -> Unit, onSend: () -> Unit, onDelete: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 16.dp, top = 12.dp, bottom = 12.dp),
@@ -180,6 +181,7 @@ private fun HikeRow(hike: HikeEntity, onClick: () -> Unit, onRename: () -> Unit,
             IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More") }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; onRename() })
+                DropdownMenuItem(text = { Text("Send hike") }, onClick = { menu = false; onSend() })
                 DropdownMenuItem(text = { Text("Export GPX") }, onClick = { menu = false; onExport() })
                 DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onDelete() })
             }
