@@ -79,21 +79,22 @@ open class PhotoStore(private val context: Context) : Photos {
         decideState(found, access(), isPrivate)
     }
 
-    /** A pending MediaStore row in Pictures/walkwalk for the camera app to write into (EXTRA_OUTPUT). */
+    /**
+     * A MediaStore row in Pictures/walkwalk for the camera app to write into (EXTRA_OUTPUT).
+     * Not IS_PENDING: only the owner may open a pending row, so the camera app could not write it.
+     */
     override fun newCameraTarget(): Uri {
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "walkwalk_${System.currentTimeMillis()}.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
             put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/walkwalk")
-            put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         return context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
             ?: error("could not create camera target")
     }
 
-    override fun commitCameraTarget(uri: Uri) {
-        context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
-    }
+    // nothing to publish: the row was never pending, and MediaProvider rescans the file when the camera closes it
+    override fun commitCameraTarget(uri: Uri) = Unit
 
     override fun discardCameraTarget(uri: Uri) {
         context.contentResolver.delete(uri, null, null)

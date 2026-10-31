@@ -151,6 +151,18 @@ class LandmarksViewModelTest {
     }
 
     @Test
+    fun applyPickerKeepsPhotosThePickerDidNotShow() = runTest {
+        val hike = repo.startHike(0)
+        val lm = repo.addLandmark(hike, 47.0, 8.0, null)
+        // "content://camera" is attached but not in the picker's list, so it was never shown and can't have been unticked
+        repo.attachPhotos(lm, listOf("content://a" to 1L, "content://camera" to 2L))
+        val vm = vm(hike)
+        vm.applyPicker(lm, emptySet(), listOf(GalleryPhoto("content://a", 1L)))
+        settle { repo.landmarks(hike).single().photos.map { it.uri } == listOf("content://camera") }
+        assertEquals(listOf("content://camera"), repo.landmarks(hike).single().photos.map { it.uri })
+    }
+
+    @Test
     fun cancelledCameraDiscardsEntry() = runTest {
         val hike = repo.startHike(0)
         val lm = repo.addLandmark(hike, 47.0, 8.0, null)

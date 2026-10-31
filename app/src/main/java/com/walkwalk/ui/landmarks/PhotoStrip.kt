@@ -138,8 +138,9 @@ fun LandmarkMenu(
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        DropdownMenuItem(text = { Text("📷 Take photo") }, enabled = canCamera, onClick = onCamera)
-        DropdownMenuItem(text = { Text("🖼 Photos from this hike") }, enabled = canPick, onClick = onPick)
+        // not offered at all when unavailable: no camera on finished hikes, no picker without times
+        if (canCamera) DropdownMenuItem(text = { Text("📷 Take photo") }, onClick = onCamera)
+        if (canPick) DropdownMenuItem(text = { Text("🖼 Photos from this hike") }, onClick = onPick)
         DropdownMenuItem(text = { Text("🗑 Delete landmark") }, onClick = { confirmDelete = true })
     }
     if (confirmDelete) {

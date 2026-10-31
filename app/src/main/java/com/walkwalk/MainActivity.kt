@@ -257,7 +257,8 @@ class MainActivity : ComponentActivity() {
         val (id, isGpx) = idAndGpx
         if (isGpx) app.appScope.launch { app.corrector.correct(id) }
         nav.navigate("replay/$id")
-        if (existing) snackbar.showSnackbar("You already have this hike") // last: it suspends until dismissed
+        // a Toast, not the snackbar: the snackbar lives on the list screen we just navigated away from
+        if (existing) Toast.makeText(this, "You already have this hike", Toast.LENGTH_LONG).show()
     }
 
     private suspend fun sendHike(hike: HikeEntity, snackbar: SnackbarHostState, confirm: (File) -> Unit) {
@@ -270,9 +271,10 @@ class MainActivity : ComponentActivity() {
             return
         }
         val file = sent.file
-        val size = "%.1f MB".format(Locale.US, file.length() / 1_048_576.0)
-        val left = if (sent.skipped > 0) " · ${sent.skipped} photo${if (sent.skipped == 1) "" else "s"} couldn't be included" else ""
-        Toast.makeText(this, "${file.name} · $size$left", Toast.LENGTH_LONG).show()
+        val bytes = file.length()
+        val size = if (bytes < 100 * 1024) "${(bytes + 1023) / 1024} KB" else "%.1f MB".format(Locale.US, bytes / 1_048_576.0)
+        val left = if (sent.skipped > 0) " Â· ${sent.skipped} photo${if (sent.skipped == 1) "" else "s"} couldn't be included" else ""
+        Toast.makeText(this, "${file.name} Â· $size$left", Toast.LENGTH_LONG).show()
         if (file.length() > HikeBundle.WARN_BYTES) confirm(file) else launchSend(file)
     }
 

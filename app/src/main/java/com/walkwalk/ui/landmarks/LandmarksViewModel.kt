@@ -116,11 +116,15 @@ class LandmarksViewModel(
         viewModelScope.launch { repo.attachPhotos(landmarkId, picked.map { it.uri to it.takenAt }) }
     }
 
-    /** Picker Done: attaches newly ticked [available] photos and removes attached ones that were unticked. */
+    /**
+     * Picker Done: attaches newly ticked [available] photos and removes attached ones that were unticked.
+     * Only photos the picker showed can be removed; camera photos and anything attached meanwhile stay.
+     */
     fun applyPicker(landmarkId: Long, ticked: Set<String>, available: List<GalleryPhoto>) {
         viewModelScope.launch {
             val current = repo.landmarks(hikeId).firstOrNull { it.id == landmarkId }?.photos.orEmpty()
-            current.filter { it.uri !in ticked }.forEach { repo.removePhoto(it.id) }
+            val shown = available.map { it.uri }.toSet()
+            current.filter { it.uri in shown && it.uri !in ticked }.forEach { repo.removePhoto(it.id) }
             val have = current.map { it.uri }.toSet()
             val fresh = available.filter { it.uri in ticked && it.uri !in have }
             if (fresh.isNotEmpty()) repo.attachPhotos(landmarkId, fresh.map { it.uri to it.takenAt })
