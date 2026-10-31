@@ -1,0 +1,21 @@
+{
+  "branches": ["main"],
+  "tagFormat": "v${version}",
+  "plugins": [
+    ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
+    ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
+    [
+      "@semantic-release/exec",
+      { "prepareCmd": "bash scripts/build-release-apk.sh ${nextRelease.version}" }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [{ "path": "dist/app-release.apk", "name": "app-release.apk", "label": "app-release.apk" }],
+        "successComment": false,
+        "failComment": false,
+        "releasedLabels": false
+      }
+    ]
+  ]
+}

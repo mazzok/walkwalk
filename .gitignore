@@ -5,3 +5,10 @@ build/
 app/build/
 .idea/
 *.iml
+
+# Release tooling (semantic-release) and its build output
+node_modules/
+dist/
+# Signing keys belong in GitHub secrets, never in the repo
+*.jks
+*.keystore
