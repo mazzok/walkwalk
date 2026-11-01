@@ -108,17 +108,20 @@ internal fun rememberBitmap(uri: String, px: Int): Bitmap? {
     return result
 }
 
+// MediaStore thumbnails are small; anything bigger (the full-screen viewer) decodes the photo itself.
+private const val MAX_THUMBNAIL_PX = 512
+
 private fun loadBitmap(context: Context, uri: String, px: Int): Bitmap? = try {
     val parsed = Uri.parse(uri)
-    if (parsed.scheme == "file") {
-        val source = ImageDecoder.createSource(File(parsed.path ?: return null))
-        ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-            val scale = px.toFloat() / maxOf(info.size.width, info.size.height)
-            if (scale < 1f) decoder.setTargetSize((info.size.width * scale).toInt().coerceAtLeast(1), (info.size.height * scale).toInt().coerceAtLeast(1))
-            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-        }
-    } else {
-        context.contentResolver.loadThumbnail(parsed, Size(px, px), null)
+    val source = when {
+        parsed.scheme == "file" -> ImageDecoder.createSource(File(parsed.path ?: return null))
+        px <= MAX_THUMBNAIL_PX -> return context.contentResolver.loadThumbnail(parsed, Size(px, px), null)
+        else -> ImageDecoder.createSource(context.contentResolver, parsed)
+    }
+    ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+        val scale = px.toFloat() / maxOf(info.size.width, info.size.height)
+        if (scale < 1f) decoder.setTargetSize((info.size.width * scale).toInt().coerceAtLeast(1), (info.size.height * scale).toInt().coerceAtLeast(1))
+        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
     }
 } catch (e: CancellationException) {
     throw e

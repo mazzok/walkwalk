@@ -27,6 +27,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.walkwalk.photos.PhotoState
@@ -60,7 +61,9 @@ fun PhotoViewer(
 @OptIn(ExperimentalFoundationApi::class) // transformable(canPan) so one-finger swipes reach the pager at scale 1
 @Composable
 private fun ZoomableImage(uri: String) {
-    val bitmap = rememberBitmap(uri, 1600)
+    // twice the screen's long edge keeps zoomed photos sharp; capped so a bitmap stays around 50 MB
+    val screen = LocalContext.current.resources.displayMetrics
+    val bitmap = rememberBitmap(uri, (maxOf(screen.widthPixels, screen.heightPixels) * 2).coerceIn(1600, 4096))
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     val state = rememberTransformableState { zoom, pan, _ ->
