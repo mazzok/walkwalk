@@ -9,6 +9,7 @@ import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.location.LocationRequest
 import android.location.altitude.AltitudeConverter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -19,7 +20,10 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import java.io.IOException
 
-/** GPS fixes from the platform GPS provider, every ~2 s, with sea-level altitude added where possible. */
+/**
+ * Location fixes every ~2 s, with sea-level altitude added where possible. Uses the fused provider
+ * (GPS plus Wi-Fi/cell) so the first fix comes quickly, also indoors; GPS alone needs open sky.
+ */
 class GpsLocationSource(private val context: Context) : LocationSource {
     private val manager = context.getSystemService(LocationManager::class.java)
     private val converter = AltitudeConverter()
@@ -27,7 +31,8 @@ class GpsLocationSource(private val context: Context) : LocationSource {
     @SuppressLint("MissingPermission") // permission is checked before recording starts
     override fun fixes(): Flow<Fix> = callbackFlow {
         val listener = LocationListener { trySend(it) }
-        manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, MIN_TIME_MS, 0f, context.mainExecutor, listener)
+        val request = LocationRequest.Builder(MIN_TIME_MS).setQuality(LocationRequest.QUALITY_HIGH_ACCURACY).build()
+        manager.requestLocationUpdates(providerOf(manager), request, context.mainExecutor, listener)
         awaitClose { manager.removeUpdates(listener) }
     }.buffer(64).map { it.toFix() }.flowOn(Dispatchers.IO)
 
@@ -46,6 +51,11 @@ class GpsLocationSource(private val context: Context) : LocationSource {
 
     companion object {
         const val MIN_TIME_MS = 2_000L
+
+        /** The fused provider where the phone has one, otherwise the GPS chip. */
+        fun providerOf(manager: LocationManager): String =
+            if (manager.hasProvider(LocationManager.FUSED_PROVIDER)) LocationManager.FUSED_PROVIDER
+            else LocationManager.GPS_PROVIDER
     }
 }
 
