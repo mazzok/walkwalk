@@ -19,4 +19,12 @@ object Format {
     }
     fun clock(epochMs: Long): String = CLOCK.format(Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()))
     fun date(epochMs: Long): String = DATE.format(Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()))
+
+    /** "Sun 1 Nov 2026, 09:12 and 13:45"; both dates when the range crosses midnight. */
+    fun range(fromMs: Long, toMs: Long, zone: ZoneId = ZoneId.systemDefault()): String {
+        val from = Instant.ofEpochMilli(fromMs).atZone(zone)
+        val to = Instant.ofEpochMilli(toMs).atZone(zone)
+        val end = if (from.toLocalDate() == to.toLocalDate()) CLOCK.format(to) else "${DATE.format(to)}, ${CLOCK.format(to)}"
+        return "${DATE.format(from)}, ${CLOCK.format(from)} and $end"
+    }
 }

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,6 +44,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.walkwalk.photos.GalleryPhoto
 import com.walkwalk.photos.PhotoAccess
+import com.walkwalk.ui.Format
 
 /** Full-screen grid of gallery photos taken during the hike, newest first. Photos already on the landmark start ticked. */
 @Composable
@@ -65,12 +67,17 @@ fun HikePhotoPicker(window: LongRange, vm: LandmarksViewModel, landmarkId: Long,
         Surface(Modifier.fillMaxSize()) {
             Column {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Photos from this hike", Modifier.weight(1f).padding(start = 8.dp))
+                    Text("Add photo", Modifier.weight(1f).padding(start = 8.dp))
                     Button(onClick = {
                         vm.applyPicker(landmarkId, ticked.toSet(), photos.orEmpty())
                         onDone()
                     }) { Text("Done") }
                 }
+                Text(
+                    "All pictures taken between ${Format.range(window.first, window.last)}",
+                    Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 if (access != PhotoAccess.FULL) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
