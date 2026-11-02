@@ -79,6 +79,9 @@ class GhostSession(
     /** Test hook, called at the start of every load. */
     internal var onLoadStart: suspend () -> Unit = {}
 
+    /** Test hook, called at the start of every render. */
+    internal var onRender: () -> Unit = {}
+
     /** Waits for a load in progress, if any. */
     internal suspend fun awaitLoad() {
         loadJob?.join()
@@ -135,15 +138,26 @@ class GhostSession(
                     failedAt = clock()
                     return@withLock
                 }
-                loaded = fresh
-                initialized = true
-                failedAt = null
-                renderLocked()
+                try {
+                    loaded = fresh
+                    initialized = true
+                    failedAt = null
+                    renderLocked()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // this job has no exception handler: never let ghost work escape and take recording down
+                    Log.w("walkwalk", "ghost render after load failed", e)
+                    loaded = emptyList()
+                    initialized = false
+                    failedAt = clock()
+                }
             }
         }
     }
 
     private fun renderLocked() {
+        onRender()
         val inputs = latest ?: return
         if (loaded.isEmpty()) return
         val last = inputs.track.last()

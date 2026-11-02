@@ -241,6 +241,19 @@ class GhostSessionTest {
     }
 
     @Test
+    fun renderFailureAfterLoadIsContainedAndRetried() = runTest {
+        seed(oldWalk)
+        var renders = 0
+        session.onRender = { if (renders++ == 0) throw IllegalStateException("boom") }
+        session.tick(1, start, 0, 0.0) // the post-load render throws; must not escape
+        assertEquals(1, renders)
+        assertTrue(session.state.value.views.isEmpty())
+        clockMs = GhostSession.LOAD_RETRY_MS
+        session.tick(1, start, 0, 0.0) // backoff over: loads again and renders
+        assertEquals(1, session.state.value.views.size)
+    }
+
+    @Test
     fun newHikeClearsBackoff() = runTest {
         seed(oldWalk)
         breakPoints()
