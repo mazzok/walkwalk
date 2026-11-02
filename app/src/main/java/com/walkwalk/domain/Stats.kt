@@ -27,8 +27,11 @@ object Stats {
             while (lo < i && (points[lo].time < t - half || points[lo].segment != seg)) lo++
             if (hi < i) hi = i
             while (hi + 1 < points.size && points[hi + 1].time <= t + half && points[hi + 1].segment == seg) hi++
-            val dt = points[hi].time - points[lo].time
-            out[i] = if (dt <= 0) 0.0 else (cum[hi] - cum[lo]) / (dt / 1000.0) * 3.6
+            // fixes sparser than the window would leave a lone point: reach for its neighbours instead
+            val from = if (lo == hi && i > 0 && points[i - 1].segment == seg) i - 1 else lo
+            val to = if (lo == hi && i + 1 < points.size && points[i + 1].segment == seg) i + 1 else hi
+            val dt = points[to].time - points[from].time
+            out[i] = if (dt <= 0) 0.0 else (cum[to] - cum[from]) / (dt / 1000.0) * 3.6
         }
         return out
     }

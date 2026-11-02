@@ -30,6 +30,19 @@ class StatsTest {
     }
 
     @Test
+    fun sparseFixesStillGetASpeed() {
+        // fixes every 20 s are further apart than half the 30 s window
+        val speeds = Stats.speedsKmh(straightLine(metersPerSec = 1.25, everyMs = 20_000, count = 10))
+        speeds.forEach { assertEquals(4.5, it, 0.1) }
+    }
+
+    @Test
+    fun aLoneFixInItsSegmentHasNoSpeed() {
+        val pts = straightLine(1.25, 20_000, 4) + p(500_000, 47.1, 11.0, seg = 1)
+        assertEquals(0.0, Stats.speedsKmh(pts).last(), 0.0)
+    }
+
+    @Test
     fun averageSpeedUsesMovingTime() {
         // 1200 m in 1200 s total, 120 s stopped -> 1200 m / 1080 s = 4.0 km/h
         val s = Stats.compute(twoSegments(), listOf(Stop(100_000, 220_000)))
