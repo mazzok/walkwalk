@@ -153,7 +153,9 @@ fun RecordingScreen(
             Log.w("walkwalk", "ghost update failed", e)
         }
     }
-    val ghostViews by ghosts.ghosts.collectAsState()
+    val ghostState by ghosts.state.collectAsState()
+    // the session is shared: until it has caught up with this hike it still holds the previous one's ghosts
+    val ghostViews = ghostState.viewsFor(s.hikeId)
     var openTrails by remember { mutableStateOf(setOf<Long>()) }
     val toggleTrail = { id: Long -> openTrails = if (id in openTrails) openTrails - id else openTrails + id }
 

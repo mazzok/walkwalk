@@ -27,6 +27,12 @@ data class GhostView(
     val finishedMs: Long?,
 )
 
+/** The ghosts last published, and the hike they belong to. */
+data class GhostState(val hikeId: Long?, val views: List<GhostView>) {
+    /** The ghosts of [hikeId]; none while the session still holds another hike's. */
+    fun viewsFor(hikeId: Long): List<GhostView> = if (this.hikeId == hikeId) views else emptyList()
+}
+
 /**
  * Tracks the old hikes that started where the current hike started, and where each of them would be now.
  * Read-only towards the repository; never touches recording. State is rebuilt from the current track,
@@ -59,8 +65,8 @@ class GhostSession(
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val mutex = Mutex()
-    private val _ghosts = MutableStateFlow<List<GhostView>>(emptyList())
-    val ghosts: StateFlow<List<GhostView>> = _ghosts
+    private val _state = MutableStateFlow(GhostState(null, emptyList()))
+    val state: StateFlow<GhostState> = _state
 
     // all guarded by mutex
     private var hikeId: Long? = null
@@ -88,7 +94,7 @@ class GhostSession(
                     initialized = false
                     failedAt = null
                     loaded = emptyList()
-                    _ghosts.value = emptyList()
+                    _state.value = GhostState(hikeId, emptyList())
                 }
                 if (track.isEmpty()) return@withLock
                 latest = Inputs(track, elapsedMs, distanceM)
@@ -156,7 +162,7 @@ class GhostSession(
                 finishedMs = if (elapsedMs >= g.track.totalMs) g.track.totalMs else null,
             )
         }
-        _ghosts.value = views
+        _state.value = GhostState(hikeId, views)
     }
 
     private suspend fun load(start: TrackPoint): List<Ghost> {
