@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -70,6 +71,7 @@ fun HikeListScreen(
     onSend: (HikeEntity) -> Unit,
     onRename: (HikeEntity, String) -> Unit,
     onDelete: (HikeEntity) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val hikes by repo.observeFinishedHikes().collectAsState(initial = emptyList())
     var renaming by remember { mutableStateOf<HikeEntity?>(null) }
@@ -79,7 +81,16 @@ fun HikeListScreen(
     fun startOrConfirm(start: () -> Unit) = if (active != null) pendingStart = start else start()
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("walkwalk") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("walkwalk") },
+                actions = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -47,6 +47,7 @@ import com.walkwalk.ui.HikeListScreen
 import com.walkwalk.ui.RecordingScreen
 import com.walkwalk.ui.ReplayScreen
 import com.walkwalk.ui.ReplayViewModel
+import com.walkwalk.ui.SettingsScreen
 import com.walkwalk.ui.landmarks.LandmarksViewModel
 import com.walkwalk.ui.rememberPermissionFlow
 import kotlinx.coroutines.CancellationException
@@ -170,6 +171,7 @@ class MainActivity : ComponentActivity() {
                     onExport = { hike -> scope.launch { exportGpx(hike) } },
                     onSend = { hike -> scope.launch { sendHike(hike, snackbar) { bigSend = it } } },
                     onRename = { hike, name -> scope.launch { app.repository.rename(hike.id, name) } },
+                    onOpenSettings = { nav.navigate(SETTINGS) { launchSingleTop = true } },
                     onDelete = { hike ->
                         scope.launch {
                             app.repository.delete(hike.id)
@@ -178,8 +180,12 @@ class MainActivity : ComponentActivity() {
                     },
                 )
             }
+            composable(SETTINGS) {
+                SettingsScreen(app.settings, onBack = { nav.popBackStack() })
+            }
             composable(RECORDING) {
                 val live by app.recording.state.collectAsState()
+                val trackColor by app.settings.trackColor.collectAsState()
                 // exists only while a hike is live; the unfinished-hike prompt needs no landmarks
                 val landmarks = live?.hikeId?.let { landmarksFor(it) }
                 RecordingScreen(
@@ -206,12 +212,15 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     landmarks = landmarks,
+                    ghosts = app.ghosts,
+                    trackColor = trackColor,
                 )
             }
             composable("replay/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
                 val id = entry.arguments!!.getLong("id")
                 val vm = viewModel(key = "replay-$id") { ReplayViewModel(app.repository, id) }
-                ReplayScreen(vm, landmarksFor(id), onBack = { nav.popBackStack(LIST, inclusive = false) }, onCorrectAltitude = {
+                val trackColor by app.settings.trackColor.collectAsState()
+                ReplayScreen(vm, landmarksFor(id), onBack = { nav.popBackStack(LIST, inclusive = false) }, trackColor = trackColor, onCorrectAltitude = {
                     scope.launch {
                         val ok = app.corrector.correct(id)
                         vm.reload()
@@ -312,5 +321,6 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val LIST = "list"
         private const val RECORDING = "recording"
+        private const val SETTINGS = "settings"
     }
 }

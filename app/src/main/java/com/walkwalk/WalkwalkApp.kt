@@ -5,8 +5,10 @@ import com.walkwalk.data.AltitudeCorrector
 import com.walkwalk.data.HikeRepository
 import com.walkwalk.data.OpenMeteoElevationApi
 import com.walkwalk.data.WalkwalkDb
+import com.walkwalk.ghost.GhostSession
 import com.walkwalk.map.MapSetup
 import com.walkwalk.photos.PhotoStore
+import com.walkwalk.settings.AppSettings
 import com.walkwalk.recording.BaroPressureSource
 import com.walkwalk.recording.DemoMode
 import com.walkwalk.recording.GpsLocationSource
@@ -37,6 +39,10 @@ class WalkwalkApp : Application() {
     val corrector: AltitudeCorrector by lazy { AltitudeCorrector(OpenMeteoElevationApi(httpClient), repository) }
 
     val photos: PhotoStore by lazy { PhotoStore(this) }
+
+    val settings: AppSettings by lazy { AppSettings(getSharedPreferences("settings", MODE_PRIVATE)) }
+
+    val ghosts: GhostSession by lazy { GhostSession(repository, settings) }
 
     val demo: DemoMode by lazy { DemoMode(this) }
 

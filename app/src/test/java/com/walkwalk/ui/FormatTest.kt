@@ -15,6 +15,14 @@ class FormatTest {
     }
 
     @Test
+    fun `delta signs ahead with plus and behind with a true minus`() {
+        assertEquals("+2:30", Format.delta(150_000))
+        assertEquals("−1:10", Format.delta(-70_000))
+        assertEquals("+0:00", Format.delta(0))
+        assertEquals("+75:00", Format.delta(4_500_000))
+    }
+
+    @Test
     fun `range over midnight names both dates`() {
         assertEquals("Sun 1 Nov 2026, 22:00 and Mon 2 Nov 2026, 02:30", Format.range(at(1, 22, 0), at(2, 2, 30), zone))
     }

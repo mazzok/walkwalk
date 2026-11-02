@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
+import android.graphics.RectF
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -45,6 +46,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.walkwalk.domain.TrackPoint
+import com.walkwalk.settings.DEFAULT_TRACK_COLOR
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
@@ -119,9 +121,27 @@ private const val TRACK_SRC = "track"
 private const val MARKER_SRC = "marker"
 private const val STOPS_SRC = "stops"
 private const val LANDMARKS_SRC = "landmarks"
+private const val GHOST_TRAILS_SRC = "ghost-trails"
+private const val GHOST_DOTS_SRC = "ghost-dots"
+private const val GHOST_DOT_LAYER = "ghost-dot-layer"
+/** Tap tolerance around a ghost dot, in dp each way. */
+private const val GHOST_TAP_SLOP_DP = 20f
 private const val PIN_LAYER = "landmark-pins"
 private const val PIN_IMAGE = "pin"
 private const val PIN_SELECTED_IMAGE = "pin-selected"
+
+sealed interface TapTarget {
+    data class Pin(val id: Long) : TapTarget
+    data class Ghost(val id: Long) : TapTarget
+    data object None : TapTarget
+}
+
+/** What a map tap acts on: an exact pin hit beats the wider ghost tap area, which beats a plain map tap. */
+fun tapTarget(pinId: Long?, ghostId: Long?): TapTarget = when {
+    pinId != null -> TapTarget.Pin(pinId)
+    ghostId != null -> TapTarget.Ghost(ghostId)
+    else -> TapTarget.None
+}
 
 /** One point per landmark; `id` and `selected` drive hit testing and the icon choice. */
 fun landmarkFeatures(landmarks: List<Landmark>, selectedId: Long?): FeatureCollection =
@@ -171,7 +191,13 @@ fun TopoMap(
     onLongPress: ((lat: Double, lon: Double) -> Unit)? = null,
     // drawn centred just below the selected pin
     selectedOverlay: (@Composable () -> Unit)? = null,
+    trackColor: Int = DEFAULT_TRACK_COLOR,
+    ghosts: List<GhostMarker> = emptyList(),
+    ghostTrails: List<GhostTrail> = emptyList(),
+    onGhostClick: (Long) -> Unit = {},
 ) {
+    val ghostClick by rememberUpdatedState(onGhostClick)
+    val trackColorNow by rememberUpdatedState(trackColor)
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapView = remember { MapView(context).apply { onCreate(null) } }
@@ -231,11 +257,28 @@ fun TopoMap(
                 updateOverlayNow()
             }
             m.addOnMapClickListener { latLng ->
-                val hit = if (m.style?.getLayer(PIN_LAYER) != null) {
-                    m.queryRenderedFeatures(m.projection.toScreenLocation(latLng), PIN_LAYER).firstOrNull()
+                val screen = m.projection.toScreenLocation(latLng)
+                // an exact hit on a landmark pin wins over the ghost tap slop
+                val pinHit = if (m.style?.getLayer(PIN_LAYER) != null) {
+                    m.queryRenderedFeatures(screen, PIN_LAYER).firstOrNull()
                 } else null
-                val id = hit?.getNumberProperty("id")?.toLong()
-                if (id != null) landmarkClick(id) else mapClick()
+                val pinId = pinHit?.getNumberProperty("id")?.toLong()
+                // ghost dots are small; accept taps within about a fingertip of one, nearest dot wins
+                val ghostHit = if (pinId == null && m.style?.getLayer(GHOST_DOT_LAYER) != null) {
+                    val slop = GHOST_TAP_SLOP_DP * mapView.resources.displayMetrics.density
+                    val box = RectF(screen.x - slop, screen.y - slop, screen.x + slop, screen.y + slop)
+                    m.queryRenderedFeatures(box, GHOST_DOT_LAYER).minByOrNull { f ->
+                        val p = f.geometry() as? Point ?: return@minByOrNull Float.MAX_VALUE
+                        val at = m.projection.toScreenLocation(LatLng(p.latitude(), p.longitude()))
+                        (at.x - screen.x) * (at.x - screen.x) + (at.y - screen.y) * (at.y - screen.y)
+                    }
+                } else null
+                val ghostId = ghostHit?.getNumberProperty("id")?.toLong()
+                when (val t = tapTarget(pinId, ghostId)) {
+                    is TapTarget.Pin -> landmarkClick(t.id)
+                    is TapTarget.Ghost -> ghostClick(t.id)
+                    TapTarget.None -> mapClick()
+                }
                 true
             }
             m.addOnMapLongClickListener { latLng ->
@@ -250,8 +293,15 @@ fun TopoMap(
                 s.addSource(GeoJsonSource(TRACK_SRC))
                 s.addSource(GeoJsonSource(STOPS_SRC))
                 s.addSource(GeoJsonSource(MARKER_SRC))
+                s.addSource(GeoJsonSource(GHOST_TRAILS_SRC))
+                s.addSource(GeoJsonSource(GHOST_DOTS_SRC))
+                s.addLayer(LineLayer("ghost-trails", GHOST_TRAILS_SRC).withProperties(
+                    PropertyFactory.lineColor(Expression.get("color")), PropertyFactory.lineOpacity(0.5f),
+                    PropertyFactory.lineWidth(3f),
+                    PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round"),
+                ))
                 s.addLayer(LineLayer("track-line", TRACK_SRC).withProperties(
-                    PropertyFactory.lineColor("#CC3333"), PropertyFactory.lineWidth(4f),
+                    PropertyFactory.lineColor(colorHex(trackColorNow)), PropertyFactory.lineWidth(4f),
                     PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round"),
                 ))
                 s.addLayer(CircleLayer("stops-dot", STOPS_SRC).withProperties(
@@ -269,6 +319,11 @@ fun TopoMap(
                     PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
                     PropertyFactory.iconAllowOverlap(true),
                     PropertyFactory.iconIgnorePlacement(true),
+                ))
+                s.addLayer(CircleLayer(GHOST_DOT_LAYER, GHOST_DOTS_SRC).withProperties(
+                    PropertyFactory.circleColor(Expression.get("color")), PropertyFactory.circleOpacity(0.8f),
+                    PropertyFactory.circleRadius(5f),
+                    PropertyFactory.circleStrokeColor("#FFFFFF"), PropertyFactory.circleStrokeWidth(1.5f),
                 ))
                 s.addLayer(CircleLayer("marker-dot", MARKER_SRC).withProperties(
                     PropertyFactory.circleColor("#0066CC"), PropertyFactory.circleRadius(7f),
@@ -293,6 +348,11 @@ fun TopoMap(
         }
     }
 
+    LaunchedEffect(style, trackColor) {
+        val s = style ?: return@LaunchedEffect
+        s.getLayerAs<LineLayer>("track-line")?.setProperties(PropertyFactory.lineColor(colorHex(trackColor)))
+    }
+
     LaunchedEffect(style, stopMarkers) {
         val s = style ?: return@LaunchedEffect
         s.getSourceAs<GeoJsonSource>(STOPS_SRC)?.setGeoJson(
@@ -304,6 +364,16 @@ fun TopoMap(
         val s = style ?: return@LaunchedEffect
         s.getSourceAs<GeoJsonSource>(LANDMARKS_SRC)?.setGeoJson(landmarkFeatures(landmarks, selectedLandmarkId))
         updateOverlay()
+    }
+
+    LaunchedEffect(style, ghosts) {
+        val s = style ?: return@LaunchedEffect
+        s.getSourceAs<GeoJsonSource>(GHOST_DOTS_SRC)?.setGeoJson(ghostDotFeatures(ghosts))
+    }
+
+    LaunchedEffect(style, ghostTrails) {
+        val s = style ?: return@LaunchedEffect
+        s.getSourceAs<GeoJsonSource>(GHOST_TRAILS_SRC)?.setGeoJson(ghostTrailFeatures(ghostTrails))
     }
 
     LaunchedEffect(style, initialCenter) {
