@@ -140,4 +140,20 @@ class GhostSessionTest {
             assertTrue(it.deltaMs == null || it.deltaMs!! > Long.MIN_VALUE)
         }
     }
+
+    @Test
+    fun failedFirstUpdateRetriesLoading() = runTest {
+        seed(oldWalk)
+        val sql = db.openHelper.writableDatabase
+        sql.execSQL("ALTER TABLE TrackPointEntity RENAME TO TrackPointEntity_tmp")
+        try {
+            session.update(1, start, 0, 0.0)
+            org.junit.Assert.fail("expected the load to fail")
+        } catch (_: Exception) {
+        } finally {
+            sql.execSQL("ALTER TABLE TrackPointEntity_tmp RENAME TO TrackPointEntity")
+        }
+        session.update(1, start, 0, 0.0)
+        assertEquals(1, session.ghosts.value.size)
+    }
 }

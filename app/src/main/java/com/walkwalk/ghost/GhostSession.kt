@@ -38,7 +38,7 @@ class GhostSession(
         val track: GhostTrack,
         val tracker: OffRouteTracker,
     ) {
-        var dropped = false
+        @Volatile var dropped = false
     }
 
     private val mutex = Mutex()
@@ -47,7 +47,7 @@ class GhostSession(
 
     private var hikeId: Long? = null
     private var initialized = false
-    private var loaded = emptyList<Ghost>()
+    @Volatile private var loaded = emptyList<Ghost>()
 
     suspend fun update(hikeId: Long, track: List<TrackPoint>, elapsedMs: Long, distanceM: Double) {
         withContext(dispatcher) {
@@ -60,8 +60,10 @@ class GhostSession(
                 }
                 if (track.isEmpty()) return@withLock
                 if (!initialized) {
+                    // assign only after load succeeds, so a failed or cancelled load is retried on the next call
+                    val fresh = if (settings.ghostMode.value) load(track.first()) else emptyList()
+                    loaded = fresh
                     initialized = true
-                    loaded = if (settings.ghostMode.value) load(track.first()) else emptyList()
                 }
                 if (loaded.isEmpty()) return@withLock
                 val last = track.last()
