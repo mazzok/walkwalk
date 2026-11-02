@@ -120,6 +120,9 @@ private const val TRACK_SRC = "track"
 private const val MARKER_SRC = "marker"
 private const val STOPS_SRC = "stops"
 private const val LANDMARKS_SRC = "landmarks"
+private const val GHOST_TRAILS_SRC = "ghost-trails"
+private const val GHOST_DOTS_SRC = "ghost-dots"
+private const val GHOST_DOT_LAYER = "ghost-dot-layer"
 private const val PIN_LAYER = "landmark-pins"
 private const val PIN_IMAGE = "pin"
 private const val PIN_SELECTED_IMAGE = "pin-selected"
@@ -173,7 +176,11 @@ fun TopoMap(
     // drawn centred just below the selected pin
     selectedOverlay: (@Composable () -> Unit)? = null,
     trackColor: Int = DEFAULT_TRACK_COLOR,
+    ghosts: List<GhostMarker> = emptyList(),
+    ghostTrails: List<GhostTrail> = emptyList(),
+    onGhostClick: (Long) -> Unit = {},
 ) {
+    val ghostClick by rememberUpdatedState(onGhostClick)
     val trackColorNow by rememberUpdatedState(trackColor)
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -234,11 +241,18 @@ fun TopoMap(
                 updateOverlayNow()
             }
             m.addOnMapClickListener { latLng ->
-                val hit = if (m.style?.getLayer(PIN_LAYER) != null) {
-                    m.queryRenderedFeatures(m.projection.toScreenLocation(latLng), PIN_LAYER).firstOrNull()
+                val screen = m.projection.toScreenLocation(latLng)
+                val ghostHit = if (m.style?.getLayer(GHOST_DOT_LAYER) != null) {
+                    m.queryRenderedFeatures(screen, GHOST_DOT_LAYER).firstOrNull()
+                } else null
+                val ghostId = ghostHit?.getNumberProperty("id")?.toLong()
+                val hit = if (ghostId == null && m.style?.getLayer(PIN_LAYER) != null) {
+                    m.queryRenderedFeatures(screen, PIN_LAYER).firstOrNull()
                 } else null
                 val id = hit?.getNumberProperty("id")?.toLong()
-                if (id != null) landmarkClick(id) else mapClick()
+                if (ghostId != null) ghostClick(ghostId)
+                else if (id != null) landmarkClick(id)
+                else mapClick()
                 true
             }
             m.addOnMapLongClickListener { latLng ->
@@ -253,6 +267,13 @@ fun TopoMap(
                 s.addSource(GeoJsonSource(TRACK_SRC))
                 s.addSource(GeoJsonSource(STOPS_SRC))
                 s.addSource(GeoJsonSource(MARKER_SRC))
+                s.addSource(GeoJsonSource(GHOST_TRAILS_SRC))
+                s.addSource(GeoJsonSource(GHOST_DOTS_SRC))
+                s.addLayer(LineLayer("ghost-trails", GHOST_TRAILS_SRC).withProperties(
+                    PropertyFactory.lineColor(Expression.get("color")), PropertyFactory.lineOpacity(0.5f),
+                    PropertyFactory.lineWidth(3f),
+                    PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round"),
+                ))
                 s.addLayer(LineLayer("track-line", TRACK_SRC).withProperties(
                     PropertyFactory.lineColor(colorHex(trackColorNow)), PropertyFactory.lineWidth(4f),
                     PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round"),
@@ -272,6 +293,11 @@ fun TopoMap(
                     PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
                     PropertyFactory.iconAllowOverlap(true),
                     PropertyFactory.iconIgnorePlacement(true),
+                ))
+                s.addLayer(CircleLayer(GHOST_DOT_LAYER, GHOST_DOTS_SRC).withProperties(
+                    PropertyFactory.circleColor(Expression.get("color")), PropertyFactory.circleOpacity(0.8f),
+                    PropertyFactory.circleRadius(5f),
+                    PropertyFactory.circleStrokeColor("#FFFFFF"), PropertyFactory.circleStrokeWidth(1.5f),
                 ))
                 s.addLayer(CircleLayer("marker-dot", MARKER_SRC).withProperties(
                     PropertyFactory.circleColor("#0066CC"), PropertyFactory.circleRadius(7f),
@@ -312,6 +338,16 @@ fun TopoMap(
         val s = style ?: return@LaunchedEffect
         s.getSourceAs<GeoJsonSource>(LANDMARKS_SRC)?.setGeoJson(landmarkFeatures(landmarks, selectedLandmarkId))
         updateOverlay()
+    }
+
+    LaunchedEffect(style, ghosts) {
+        val s = style ?: return@LaunchedEffect
+        s.getSourceAs<GeoJsonSource>(GHOST_DOTS_SRC)?.setGeoJson(ghostDotFeatures(ghosts))
+    }
+
+    LaunchedEffect(style, ghostTrails) {
+        val s = style ?: return@LaunchedEffect
+        s.getSourceAs<GeoJsonSource>(GHOST_TRAILS_SRC)?.setGeoJson(ghostTrailFeatures(ghostTrails))
     }
 
     LaunchedEffect(style, initialCenter) {
