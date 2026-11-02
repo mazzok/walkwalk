@@ -1,12 +1,18 @@
 package com.walkwalk.ghost
 
+import android.util.Log
 import com.walkwalk.data.HikeRepository
 import com.walkwalk.domain.TrackPoint
 import com.walkwalk.settings.AppSettings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -25,12 +31,20 @@ data class GhostView(
  * Tracks the old hikes that started where the current hike started, and where each of them would be now.
  * Read-only towards the repository; never touches recording. State is rebuilt from the current track,
  * nothing is persisted.
+ *
+ * The (possibly slow) load of the old hikes runs once per hike in a job this session owns, so the
+ * per-second [update] never cancels or restarts it; a failed load is retried after [LOAD_RETRY_MS].
  */
 class GhostSession(
     private val repo: HikeRepository,
     private val settings: AppSettings,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    companion object {
+        const val LOAD_RETRY_MS = 30_000L
+    }
+
     private class Ghost(
         val id: Long,
         val name: String,
@@ -41,53 +55,109 @@ class GhostSession(
         @Volatile var dropped = false
     }
 
+    private class Inputs(val track: List<TrackPoint>, val elapsedMs: Long, val distanceM: Double)
+
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val mutex = Mutex()
     private val _ghosts = MutableStateFlow<List<GhostView>>(emptyList())
     val ghosts: StateFlow<List<GhostView>> = _ghosts
 
+    // all guarded by mutex
     private var hikeId: Long? = null
     private var initialized = false
+    private var loadJob: Job? = null
+    private var failedAt: Long? = null
+    private var latest: Inputs? = null
     @Volatile private var loaded = emptyList<Ghost>()
+
+    /** Test hook, called at the start of every load. */
+    internal var onLoadStart: suspend () -> Unit = {}
+
+    /** Waits for a load in progress, if any. */
+    internal suspend fun awaitLoad() {
+        loadJob?.join()
+    }
 
     suspend fun update(hikeId: Long, track: List<TrackPoint>, elapsedMs: Long, distanceM: Double) {
         withContext(dispatcher) {
             mutex.withLock {
                 if (this@GhostSession.hikeId != hikeId) {
+                    loadJob?.cancel()
+                    loadJob = null
                     this@GhostSession.hikeId = hikeId
                     initialized = false
+                    failedAt = null
                     loaded = emptyList()
                     _ghosts.value = emptyList()
                 }
                 if (track.isEmpty()) return@withLock
+                latest = Inputs(track, elapsedMs, distanceM)
                 if (!initialized) {
-                    // assign only after load succeeds, so a failed or cancelled load is retried on the next call
-                    val fresh = if (settings.ghostMode.value) load(track.first()) else emptyList()
-                    loaded = fresh
-                    initialized = true
+                    startLoadLocked(hikeId, track.first())
+                    return@withLock
                 }
-                if (loaded.isEmpty()) return@withLock
-                val last = track.last()
-                val views = ArrayList<GhostView>(loaded.size)
-                for (g in loaded) {
-                    if (g.dropped) continue
-                    if (g.tracker.update(elapsedMs, g.track.distanceToTrackM(last.lat, last.lon))) {
-                        g.dropped = true
-                        continue
-                    }
-                    val (lat, lon) = g.track.positionAt(elapsedMs)
-                    views += GhostView(
-                        id = g.id, name = g.name, colorArgb = g.color, lat = lat, lon = lon,
-                        deltaMs = aheadBehindMs(g.track, distanceM, elapsedMs),
-                        finishedMs = if (elapsedMs >= g.track.totalMs) g.track.totalMs else null,
-                    )
-                }
-                _ghosts.value = views
+                renderLocked()
             }
         }
     }
 
     /** The full recorded route of a ghost, for drawing; empty if unknown or dropped. */
     fun trail(id: Long): List<TrackPoint> = loaded.firstOrNull { it.id == id && !it.dropped }?.track?.points.orEmpty()
+
+    private fun startLoadLocked(forHike: Long, start: TrackPoint) {
+        if (loadJob?.isActive == true) return
+        failedAt?.let { if (clock() - it < LOAD_RETRY_MS) return }
+        if (!settings.ghostMode.value) {
+            loaded = emptyList()
+            initialized = true
+            return
+        }
+        loadJob = scope.launch {
+            val fresh = try {
+                onLoadStart()
+                load(start)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("walkwalk", "ghost load failed", e)
+                null
+            }
+            mutex.withLock {
+                // a newer hike took over meanwhile: this result is stale
+                if (hikeId != forHike) return@withLock
+                if (fresh == null) {
+                    failedAt = clock()
+                    return@withLock
+                }
+                loaded = fresh
+                initialized = true
+                failedAt = null
+                renderLocked()
+            }
+        }
+    }
+
+    private fun renderLocked() {
+        val inputs = latest ?: return
+        if (loaded.isEmpty()) return
+        val last = inputs.track.last()
+        val elapsedMs = inputs.elapsedMs
+        val views = ArrayList<GhostView>(loaded.size)
+        for (g in loaded) {
+            if (g.dropped) continue
+            if (g.tracker.update(elapsedMs, g.track.distanceToTrackM(last.lat, last.lon))) {
+                g.dropped = true
+                continue
+            }
+            val (lat, lon) = g.track.positionAt(elapsedMs)
+            views += GhostView(
+                id = g.id, name = g.name, colorArgb = g.color, lat = lat, lon = lon,
+                deltaMs = aheadBehindMs(g.track, inputs.distanceM, elapsedMs),
+                finishedMs = if (elapsedMs >= g.track.totalMs) g.track.totalMs else null,
+            )
+        }
+        _ghosts.value = views
+    }
 
     private suspend fun load(start: TrackPoint): List<Ghost> {
         val tracks = matchGhosts(start, repo.ghostCandidates()).mapNotNull { c ->
