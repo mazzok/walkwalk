@@ -27,6 +27,13 @@ interface HikeDao {
     @Insert suspend fun insertPoints(p: List<TrackPointEntity>)
     @Query("SELECT * FROM TrackPointEntity WHERE hikeId = :hikeId ORDER BY time, id")
     suspend fun points(hikeId: Long): List<TrackPointEntity>
+    @Query(
+        "SELECT p.* FROM TrackPointEntity p JOIN HikeEntity h ON h.id = p.hikeId " +
+            "WHERE h.status = 'FINISHED' AND h.hasTimes = 1 " +
+            "AND p.id = (SELECT q.id FROM TrackPointEntity q WHERE q.hikeId = h.id ORDER BY q.time, q.id LIMIT 1) " +
+            "AND (SELECT COUNT(*) FROM TrackPointEntity c WHERE c.hikeId = h.id) >= 2",
+    )
+    suspend fun ghostFirstPoints(): List<TrackPointEntity>
     @Query("SELECT MAX(segment) FROM TrackPointEntity WHERE hikeId = :hikeId") suspend fun lastSegment(hikeId: Long): Int?
     @Query("UPDATE TrackPointEntity SET altitude = :altitude WHERE id = :id") suspend fun setAltitude(id: Long, altitude: Double?)
     @Query("DELETE FROM TrackPointEntity WHERE hikeId = :hikeId") suspend fun deletePoints(hikeId: Long)

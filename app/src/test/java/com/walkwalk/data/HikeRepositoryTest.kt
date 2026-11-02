@@ -114,4 +114,26 @@ class HikeRepositoryTest {
         assertEquals(listOf(b, a), list.map { it.id })
         assertFalse(list.any { it.id == c })
     }
+
+    @Test
+    fun ghostCandidatesOnlyFinishedTimedHikesWithTwoPoints() = runTest {
+        val dao = db.hikeDao()
+        suspend fun hike(status: HikeStatus, hasTimes: Boolean, pts: Int): Long {
+            val id = dao.insertHike(
+                HikeEntity(name = "h$pts$status$hasTimes", startTime = 0, endTime = null, status = status,
+                    source = HikeSource.RECORDED, hasTimes = hasTimes),
+            )
+            // inserted latest-first so "first" must come from ordering, not insertion
+            straightLine(1.0, 10_000, pts).reversed().forEach { dao.insertPoint(TrackPointEntity.from(id, it)) }
+            return id
+        }
+        val a = hike(HikeStatus.FINISHED, true, 3)
+        hike(HikeStatus.FINISHED, true, 1)
+        hike(HikeStatus.FINISHED, false, 3)
+        hike(HikeStatus.RECORDING, true, 3)
+        val c = repo.ghostCandidates()
+        assertEquals(listOf(a), c.map { it.hike.id })
+        assertEquals(0L, c[0].first.time)
+        assertEquals(47.0, c[0].first.lat, 1e-9)
+    }
 }

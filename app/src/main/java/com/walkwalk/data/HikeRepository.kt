@@ -2,6 +2,7 @@ package com.walkwalk.data
 
 import androidx.room.withTransaction
 import com.walkwalk.domain.Altitude
+import com.walkwalk.ghost.GhostCandidate
 import com.walkwalk.domain.Geo
 import com.walkwalk.domain.ParsedGpx
 import com.walkwalk.domain.Stats
@@ -38,6 +39,12 @@ class HikeRepository(private val db: WalkwalkDb) {
     suspend fun rename(hikeId: Long, name: String) = dao.rename(hikeId, name)
 
     suspend fun points(hikeId: Long): List<TrackPoint> = dao.points(hikeId).map { it.toPoint() }
+    /** Finished timed hikes with at least 2 points, each with its earliest point. */
+    suspend fun ghostCandidates(): List<GhostCandidate> {
+        val firsts = dao.ghostFirstPoints().associateBy { it.hikeId }
+        return dao.finished().mapNotNull { h -> firsts[h.id]?.let { GhostCandidate(h, it.toPoint()) } }
+    }
+
     suspend fun stops(hikeId: Long): List<Stop> = dao.stops(hikeId).map { it.toStop() }
 
     /** Fuses altitude from the raw readings, detects stops, caches stats and marks the hike finished. */
