@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.walkwalk.settings.AppSettings
 import com.walkwalk.settings.TRACK_SWATCHES
+import com.walkwalk.settings.checkColorOn
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -79,7 +80,7 @@ fun SettingsScreen(settings: AppSettings, onBack: () -> Unit) {
                             .semantics { contentDescription = "Track color ${i + 1}" + if (selected) ", selected" else "" },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (selected) Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
+                        if (selected) Icon(Icons.Default.Check, contentDescription = null, tint = Color(checkColorOn(argb)))
                     }
                 }
             }
