@@ -1,6 +1,20 @@
 package com.walkwalk.ui
 
 import android.content.Context
+import android.util.Log
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
+import com.walkwalk.ghost.GhostSession
+import com.walkwalk.map.GhostMarker
+import com.walkwalk.map.GhostTrail
+import kotlinx.coroutines.CancellationException
 import android.location.LocationManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,6 +94,7 @@ fun RecordingScreen(
     onContinueUnfinished: () -> Unit,
     onSaveUnfinished: (Long) -> Unit,
     landmarks: LandmarksViewModel?,
+    ghosts: GhostSession,
     trackColor: Int,
 ) {
     val context = LocalContext.current
@@ -125,6 +140,23 @@ fun RecordingScreen(
     // elapsed keeps ticking between fixes while recording
     val elapsed = s.elapsedMs + if (recording && last != null) (now - last.time).coerceIn(0, 60_000) else 0
 
+    // ghosts only read; any failure here is logged and must never reach the recording screen or the recording
+    val latestS by rememberUpdatedState(s)
+    val latestElapsed by rememberUpdatedState(elapsed)
+    LaunchedEffect(now, s.hikeId) {
+        val cur = latestS
+        try {
+            ghosts.update(cur.hikeId, cur.track, latestElapsed, cur.distanceM)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("walkwalk", "ghost update failed", e)
+        }
+    }
+    val ghostViews by ghosts.ghosts.collectAsState()
+    var openTrails by remember { mutableStateOf(setOf<Long>()) }
+    val toggleTrail = { id: Long -> openTrails = if (id in openTrails) openTrails - id else openTrails + id }
+
     // the picker needs the hike's start time; a live hike always has times
     val hike by produceState<HikeEntity?>(null, s.hikeId) { value = repo.hike(s.hikeId) }
 
@@ -141,10 +173,13 @@ fun RecordingScreen(
             landmarks = args?.landmarks.orEmpty(),
             selectedLandmarkId = args?.selectedLandmarkId,
             onLandmarkClick = args?.onLandmarkClick ?: {},
-            onMapClick = args?.onMapClick ?: {},
+            onMapClick = { openTrails = emptySet(); args?.onMapClick?.invoke() },
             onLongPress = args?.onLongPress,
             selectedOverlay = args?.selectedOverlay,
             trackColor = trackColor,
+            ghosts = ghostViews.map { GhostMarker(it.id, it.colorArgb, it.lat, it.lon) },
+            ghostTrails = ghostViews.filter { it.id in openTrails }.map { GhostTrail(it.id, it.colorArgb, ghosts.trail(it.id)) },
+            onGhostClick = toggleTrail,
         )
         Column(Modifier.safeDrawingPadding().padding(12.dp).fillMaxWidth()) {
             Card(Modifier.fillMaxWidth()) {
@@ -175,6 +210,24 @@ fun RecordingScreen(
                         "km/h" to Format.speed(s.speedKmh),
                         "m ↑" to Format.meters(s.ascentM),
                     )
+                }
+            }
+            if (ghostViews.isNotEmpty()) {
+                Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Column(Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp)) {
+                        ghostViews.forEach { g ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable { toggleTrail(g.id) }.padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(Modifier.size(10.dp).clip(CircleShape).background(Color(g.colorArgb)))
+                                Text(g.name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                g.finishedMs?.let { Text("finished · ${Format.duration(it)}", style = MaterialTheme.typography.bodySmall) }
+                                g.deltaMs?.let { Text(Format.delta(it), style = MaterialTheme.typography.bodySmall) }
+                            }
+                        }
+                    }
                 }
             }
             if (atRisk && !riskDismissed) {

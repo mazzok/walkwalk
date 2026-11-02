@@ -17,6 +17,11 @@ object Format {
         val min = ms / 60_000
         return String.format(Locale.ROOT, "%d:%02d", min / 60, min % 60)
     }
+    /** Signed m:ss ahead/behind; U+2212 minus, minutes not wrapped at 60. */
+    fun delta(ms: Long): String {
+        val sec = Math.abs(ms) / 1000
+        return String.format(Locale.ROOT, "%s%d:%02d", if (ms < 0) "−" else "+", sec / 60, sec % 60)
+    }
     fun clock(epochMs: Long): String = CLOCK.format(Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()))
     fun date(epochMs: Long): String = DATE.format(Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()))
 

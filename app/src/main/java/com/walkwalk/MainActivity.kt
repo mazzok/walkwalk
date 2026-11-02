@@ -212,6 +212,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     landmarks = landmarks,
+                    ghosts = app.ghosts,
                     trackColor = trackColor,
                 )
             }
