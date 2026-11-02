@@ -3,8 +3,8 @@ package com.walkwalk.ghost
 import kotlin.math.sqrt
 
 val GHOST_PALETTE: List<Int> = listOf(
-    0xFF7B3FA0, 0xFF00897B, 0xFFF9A825, 0xFF3949AB,
-    0xFF6D4C41, 0xFF00ACC1, 0xFFD81B60, 0xFF7CB342,
+    0xFF7B3FA0, 0xFF00897B, 0xFFF9A825, 0xFFEF6C00,
+    0xFF6D4C41, 0xFF455A64, 0xFFD81B60, 0xFF7CB342,
 ).map { it.toInt() }
 
 private const val MIN_COLOR_DISTANCE = 80.0

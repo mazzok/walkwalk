@@ -20,6 +20,7 @@ class FormatTest {
         assertEquals("−1:10", Format.delta(-70_000))
         assertEquals("+0:00", Format.delta(0))
         assertEquals("+75:00", Format.delta(4_500_000))
+        assertEquals("+0:00", Format.delta(-999))
     }
 
     @Test

@@ -29,6 +29,7 @@ class AppSettings(private val prefs: SharedPreferences) {
     }
 
     fun setGhostDropM(m: Int) {
+        require(m in DROP_OPTIONS) { "unsupported drop distance: $m" }
         prefs.edit().putInt(KEY_GHOST_DROP_M, m).apply()
         _ghostDropM.value = m
     }

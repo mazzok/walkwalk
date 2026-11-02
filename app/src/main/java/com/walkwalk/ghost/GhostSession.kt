@@ -54,7 +54,6 @@ class GhostSession(
     private class Ghost(
         val id: Long,
         val name: String,
-        val color: Int,
         val track: GhostTrack,
         val tracker: OffRouteTracker,
     ) {
@@ -163,7 +162,9 @@ class GhostSession(
         val last = inputs.track.last()
         val elapsedMs = inputs.elapsedMs
         val views = ArrayList<GhostView>(loaded.size)
-        for (g in loaded) {
+        // recomputed each render so a track color change mid-hike keeps ghosts distinct from it
+        val colors = ghostColors(loaded.size, settings.trackColor.value)
+        for ((i, g) in loaded.withIndex()) {
             if (g.dropped) continue
             if (g.tracker.update(elapsedMs, g.track.distanceToTrackM(last.lat, last.lon))) {
                 g.dropped = true
@@ -171,7 +172,7 @@ class GhostSession(
             }
             val (lat, lon) = g.track.positionAt(elapsedMs)
             views += GhostView(
-                id = g.id, name = g.name, colorArgb = g.color, lat = lat, lon = lon,
+                id = g.id, name = g.name, colorArgb = colors[i], lat = lat, lon = lon,
                 deltaMs = aheadBehindMs(g.track, inputs.distanceM, elapsedMs),
                 finishedMs = if (elapsedMs >= g.track.totalMs) g.track.totalMs else null,
             )
@@ -184,8 +185,7 @@ class GhostSession(
             val pts = repo.points(c.hike.id)
             if (pts.size < 2) null else Triple(c.hike.id, c.hike.name, GhostTrack(pts))
         }
-        val colors = ghostColors(tracks.size, settings.trackColor.value)
         val drop = settings.ghostDropM.value
-        return tracks.mapIndexed { i, (id, name, t) -> Ghost(id, name, colors[i], t, OffRouteTracker(drop)) }
+        return tracks.map { (id, name, t) -> Ghost(id, name, t, OffRouteTracker(drop)) }
     }
 }

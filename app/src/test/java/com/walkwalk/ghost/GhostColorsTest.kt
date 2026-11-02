@@ -27,6 +27,10 @@ class GhostColorsTest {
         assertFalse(colors.contains(GHOST_PALETTE[0]))
     }
 
+    @Test fun paletteStaysClearOfTheBlueUserMarker() {
+        assertTrue(GHOST_PALETTE.all { dist(it, 0xFF0066CC.toInt()) >= 80.0 })
+    }
+
     @Test fun cyclesToCount() {
         assertEquals(20, ghostColors(20, DEFAULT_TRACK_COLOR).size)
     }

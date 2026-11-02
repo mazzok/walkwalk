@@ -41,6 +41,11 @@ class AppSettingsTest {
         assertEquals(true, settings.ghostMode.value)
     }
 
+    @Test(expected = IllegalArgumentException::class)
+    fun setGhostDropMRejectsUnsupportedValue() {
+        AppSettings(prefs).setGhostDropM(123)
+    }
+
     @Test
     fun unknownDropValueFallsBackToDefault() {
         prefs.edit().putInt("ghost_drop_m", 123).commit()
