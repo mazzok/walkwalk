@@ -56,6 +56,17 @@ class ReplayViewModelTest {
     }
 
     @Test
+    fun heatmapIsOffUntilSwitchedOn() = runTest {
+        val vm = walkVm()
+        assertFalse(vm.showHeatmap.value)
+        assertTrue(vm.heatmap.value!!.edges.isNotEmpty())
+        vm.toggleHeatmap()
+        assertTrue(vm.showHeatmap.value)
+        vm.toggleHeatmap()
+        assertFalse(vm.showHeatmap.value)
+    }
+
+    @Test
     fun loadsHike() = runTest {
         val vm = walkVm()
         assertEquals(1_198_000L, vm.durationMs)

@@ -1,5 +1,6 @@
 package com.walkwalk.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,6 +32,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.walkwalk.map.TopoMap
 import com.walkwalk.ui.landmarks.LandmarkLayer
@@ -47,6 +51,8 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
     val canPlay by vm.canPlay.collectAsState()
     val profile by vm.profile.collectAsState()
     val stopPositions by vm.stopPositions.collectAsState()
+    val heatmap by vm.heatmap.collectAsState()
+    val showHeatmap by vm.showHeatmap.collectAsState()
     var expanded by remember { mutableStateOf(false) }
 
     LandmarkLayer(landmarks, hike, canCamera = false) { args -> Box(Modifier.fillMaxSize()) {
@@ -64,6 +70,7 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
             onLongPress = args.onLongPress,
             selectedOverlay = args.selectedOverlay,
             trackColor = trackColor,
+            heatmap = if (showHeatmap) heatmap else null,
         )
 
         val h = hike
@@ -89,6 +96,7 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
                         "km" to Format.km2(f.distanceM),
                         "m ↑" to Format.meters(f.ascentM),
                     )
+                    heatmap?.takeIf { showHeatmap }?.let { SpeedLegend(it.minKmh, it.maxKmh) }
                     if (expanded) {
                         Text(
                             "Total ${Format.km(h.distanceM)} · ${Format.duration(h.totalMs)} total · ${Format.duration(h.movingMs)} moving\n" +
@@ -98,6 +106,10 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
                             Modifier.padding(top = 8.dp),
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Show speed heatmap", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            Switch(checked = showHeatmap, onCheckedChange = { vm.toggleHeatmap() })
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 if (h.demCorrected) "Altitude corrected" else "Altitude not yet corrected",
@@ -139,4 +151,17 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
             }
         }
     } }
+}
+
+/** Blue-to-red bar with the slowest and fastest moving speed at its ends. */
+@Composable
+private fun SpeedLegend(minKmh: Double, maxKmh: Double) {
+    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(Format.speed(minKmh), style = MaterialTheme.typography.labelSmall)
+        Box(
+            Modifier.padding(horizontal = 6.dp).weight(1f).height(8.dp)
+                .background(Brush.horizontalGradient(listOf(Color.Blue, Color.Red))),
+        )
+        Text("${Format.speed(maxKmh)} km/h", style = MaterialTheme.typography.labelSmall)
+    }
 }

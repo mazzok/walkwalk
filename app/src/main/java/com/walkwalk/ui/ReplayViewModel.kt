@@ -7,6 +7,7 @@ import com.walkwalk.data.HikeRepository
 import com.walkwalk.domain.Geo
 import com.walkwalk.domain.ReplayFrame
 import com.walkwalk.domain.ReplayTimeline
+import com.walkwalk.domain.SpeedHeatmap
 import com.walkwalk.domain.Stop
 import com.walkwalk.domain.TrackPoint
 import kotlinx.coroutines.Job
@@ -27,6 +28,11 @@ class ReplayViewModel(private val repo: HikeRepository, private val hikeId: Long
     val stopPositions: StateFlow<List<Pair<Double, Double>>> = _stopPositions
     private val _profile = MutableStateFlow<Profile?>(null)
     val profile: StateFlow<Profile?> = _profile
+
+    private val _heatmap = MutableStateFlow<SpeedHeatmap?>(null)
+    val heatmap: StateFlow<SpeedHeatmap?> = _heatmap
+    private val _showHeatmap = MutableStateFlow(false)
+    val showHeatmap: StateFlow<Boolean> = _showHeatmap
 
     private val _frame = MutableStateFlow<ReplayFrame?>(null)
     val frame: StateFlow<ReplayFrame?> = _frame
@@ -59,6 +65,7 @@ class ReplayViewModel(private val repo: HikeRepository, private val hikeId: Long
             _points.value = pts
             _stopPositions.value = stops.mapNotNull { s -> pts.firstOrNull { it.time >= s.start }?.let { it.lat to it.lon } }
             _profile.value = buildProfile(pts, stops)
+            _heatmap.value = SpeedHeatmap.of(pts, stops)
             timeline = ReplayTimeline(pts, stops)
             _canPlay.value = h.hasTimes && durationMs > 0
             seek(_replayMs.value)
@@ -95,6 +102,10 @@ class ReplayViewModel(private val repo: HikeRepository, private val hikeId: Long
             }
             _playing.value = false
         }
+    }
+
+    fun toggleHeatmap() {
+        _showHeatmap.value = !_showHeatmap.value
     }
 
     fun setSpeed(factor: Int) {

@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.walkwalk.domain.SpeedHeatmap
 import com.walkwalk.domain.TrackPoint
 import com.walkwalk.settings.DEFAULT_TRACK_COLOR
 import okhttp3.OkHttpClient
@@ -118,6 +119,7 @@ object MapSetup {
 }
 
 private const val TRACK_SRC = "track"
+private const val HEAT_SRC = "heat"
 private const val MARKER_SRC = "marker"
 private const val STOPS_SRC = "stops"
 private const val LANDMARKS_SRC = "landmarks"
@@ -195,6 +197,8 @@ fun TopoMap(
     ghosts: List<GhostMarker> = emptyList(),
     ghostTrails: List<GhostTrail> = emptyList(),
     onGhostClick: (Long) -> Unit = {},
+    // when set, replaces the plain track line with speed colours
+    heatmap: SpeedHeatmap? = null,
 ) {
     val ghostClick by rememberUpdatedState(onGhostClick)
     val trackColorNow by rememberUpdatedState(trackColor)
@@ -291,6 +295,7 @@ fun TopoMap(
             }
             m.setStyle(Style.Builder().fromJson(TopoStyle.json())) { s ->
                 s.addSource(GeoJsonSource(TRACK_SRC))
+                s.addSource(GeoJsonSource(HEAT_SRC))
                 s.addSource(GeoJsonSource(STOPS_SRC))
                 s.addSource(GeoJsonSource(MARKER_SRC))
                 s.addSource(GeoJsonSource(GHOST_TRAILS_SRC))
@@ -303,6 +308,11 @@ fun TopoMap(
                 s.addLayer(LineLayer("track-line", TRACK_SRC).withProperties(
                     PropertyFactory.lineColor(colorHex(trackColorNow)), PropertyFactory.lineWidth(4f),
                     PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round"),
+                ))
+                s.addLayer(LineLayer("heat-line", HEAT_SRC).withProperties(
+                    PropertyFactory.lineColor(Expression.get("color")), PropertyFactory.lineWidth(4f),
+                    PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round"),
+                    PropertyFactory.visibility(Property.NONE),
                 ))
                 s.addLayer(CircleLayer("stops-dot", STOPS_SRC).withProperties(
                     PropertyFactory.circleColor("#E0A030"), PropertyFactory.circleRadius(5f),
@@ -351,6 +361,13 @@ fun TopoMap(
     LaunchedEffect(style, trackColor) {
         val s = style ?: return@LaunchedEffect
         s.getLayerAs<LineLayer>("track-line")?.setProperties(PropertyFactory.lineColor(colorHex(trackColor)))
+    }
+
+    LaunchedEffect(style, heatmap) {
+        val s = style ?: return@LaunchedEffect
+        if (heatmap != null) s.getSourceAs<GeoJsonSource>(HEAT_SRC)?.setGeoJson(heatmapFeatures(heatmap))
+        s.getLayerAs<LineLayer>("heat-line")?.setProperties(PropertyFactory.visibility(if (heatmap != null) Property.VISIBLE else Property.NONE))
+        s.getLayerAs<LineLayer>("track-line")?.setProperties(PropertyFactory.visibility(if (heatmap != null) Property.NONE else Property.VISIBLE))
     }
 
     LaunchedEffect(style, stopMarkers) {
