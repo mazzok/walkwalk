@@ -37,7 +37,7 @@ import com.walkwalk.ui.landmarks.LandmarksViewModel
 
 /** Replay layout B: full-screen map, floating numbers at the top, profile and scrubber at the bottom. */
 @Composable
-fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () -> Unit, onCorrectAltitude: () -> Unit) {
+fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () -> Unit, onCorrectAltitude: () -> Unit, trackColor: Int) {
     val hike by vm.hike.collectAsState()
     val points by vm.points.collectAsState()
     val frame by vm.frame.collectAsState()
@@ -63,6 +63,7 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
             onMapClick = args.onMapClick,
             onLongPress = args.onLongPress,
             selectedOverlay = args.selectedOverlay,
+            trackColor = trackColor,
         )
 
         val h = hike

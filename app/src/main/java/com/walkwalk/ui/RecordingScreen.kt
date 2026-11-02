@@ -80,6 +80,7 @@ fun RecordingScreen(
     onContinueUnfinished: () -> Unit,
     onSaveUnfinished: (Long) -> Unit,
     landmarks: LandmarksViewModel?,
+    trackColor: Int,
 ) {
     val context = LocalContext.current
     val state by controller.state.collectAsState()
@@ -143,6 +144,7 @@ fun RecordingScreen(
             onMapClick = args?.onMapClick ?: {},
             onLongPress = args?.onLongPress,
             selectedOverlay = args?.selectedOverlay,
+            trackColor = trackColor,
         )
         Column(Modifier.safeDrawingPadding().padding(12.dp).fillMaxWidth()) {
             Card(Modifier.fillMaxWidth()) {

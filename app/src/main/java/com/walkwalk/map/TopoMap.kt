@@ -45,6 +45,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.walkwalk.domain.TrackPoint
+import com.walkwalk.settings.DEFAULT_TRACK_COLOR
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
@@ -171,7 +172,9 @@ fun TopoMap(
     onLongPress: ((lat: Double, lon: Double) -> Unit)? = null,
     // drawn centred just below the selected pin
     selectedOverlay: (@Composable () -> Unit)? = null,
+    trackColor: Int = DEFAULT_TRACK_COLOR,
 ) {
+    val trackColorNow by rememberUpdatedState(trackColor)
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapView = remember { MapView(context).apply { onCreate(null) } }
@@ -251,7 +254,7 @@ fun TopoMap(
                 s.addSource(GeoJsonSource(STOPS_SRC))
                 s.addSource(GeoJsonSource(MARKER_SRC))
                 s.addLayer(LineLayer("track-line", TRACK_SRC).withProperties(
-                    PropertyFactory.lineColor("#CC3333"), PropertyFactory.lineWidth(4f),
+                    PropertyFactory.lineColor(colorHex(trackColorNow)), PropertyFactory.lineWidth(4f),
                     PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round"),
                 ))
                 s.addLayer(CircleLayer("stops-dot", STOPS_SRC).withProperties(
@@ -291,6 +294,11 @@ fun TopoMap(
             mapView.post { m.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 80)) }
             fitted = true
         }
+    }
+
+    LaunchedEffect(style, trackColor) {
+        val s = style ?: return@LaunchedEffect
+        s.getLayerAs<LineLayer>("track-line")?.setProperties(PropertyFactory.lineColor(colorHex(trackColor)))
     }
 
     LaunchedEffect(style, stopMarkers) {
