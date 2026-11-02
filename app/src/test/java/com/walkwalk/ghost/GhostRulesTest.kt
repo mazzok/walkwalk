@@ -38,11 +38,11 @@ class GhostRulesTest {
 
     private val ghost = GhostTrack(straightLine(1.0, 5_000, 61))
 
-    @Test fun aheadWhenSlower() {
+    @Test fun positiveWhenSlower() {
         assertEquals(30_000L, aheadBehindMs(ghost, 150.0, 180_000))
     }
 
-    @Test fun behindWhenFaster() {
+    @Test fun negativeWhenFaster() {
         assertEquals(-30_000L, aheadBehindMs(ghost, 150.0, 120_000))
     }
 
