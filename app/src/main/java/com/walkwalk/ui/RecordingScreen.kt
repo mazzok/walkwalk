@@ -138,7 +138,7 @@ fun RecordingScreen(
     val lastKnown = remember { lastKnownPosition(context) }
     val recording = s.status == HikeStatus.RECORDING
     // elapsed keeps ticking between fixes while recording
-    val elapsed = s.elapsedMs + if (recording && last != null) (now - last.time).coerceIn(0, 60_000) else 0
+    val elapsed = liveElapsedMs(s.elapsedMs, recording, last, s.segment, now)
 
     // ghosts only read; any failure here is logged and must never reach the recording screen or the recording
     val latestS by rememberUpdatedState(s)

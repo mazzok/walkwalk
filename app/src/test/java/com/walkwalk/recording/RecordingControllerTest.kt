@@ -88,6 +88,18 @@ class RecordingControllerTest {
     }
 
     @Test
+    fun liveStateNamesTheNewSegmentBeforeItsFirstFix() = runTest {
+        val ctl = newController()
+        ctl.start(); runCurrent()
+        fakeGps.emit(fix(0)); runCurrent()
+        assertEquals(0, ctl.state.value!!.segment)
+        ctl.pause(); runCurrent()
+        ctl.resume(); runCurrent()
+        assertEquals(1, ctl.state.value!!.segment)
+        assertEquals(0, ctl.state.value!!.track.last().segment)
+    }
+
+    @Test
     fun restartContinuesActiveHikeInNewSegment() = runTest {
         val ctl = newController()
         val id = ctl.start(); runCurrent()

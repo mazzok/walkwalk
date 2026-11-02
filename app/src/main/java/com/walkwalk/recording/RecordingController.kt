@@ -39,6 +39,8 @@ data class LiveState(
     val speedKmh: Double,
     val ascentM: Double,
     val track: List<TrackPoint>,
+    /** Segment new fixes go into; differs from the last fix's segment until the first fix after a resume or restore. */
+    val segment: Int = 0,
 )
 
 /**
@@ -160,7 +162,7 @@ class RecordingController(
     private fun publish(hikeId: Long, status: HikeStatus) {
         _state.value = LiveState(
             hikeId, status, live.elapsedMs, live.distanceM, live.altitudeM, live.speedKmh, live.ascentM,
-            live.track.toList(),
+            live.track.toList(), segment,
         )
     }
 
