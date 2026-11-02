@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
+import android.graphics.RectF
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -123,6 +124,8 @@ private const val LANDMARKS_SRC = "landmarks"
 private const val GHOST_TRAILS_SRC = "ghost-trails"
 private const val GHOST_DOTS_SRC = "ghost-dots"
 private const val GHOST_DOT_LAYER = "ghost-dot-layer"
+/** Tap tolerance around a ghost dot, in dp each way. */
+private const val GHOST_TAP_SLOP_DP = 20f
 private const val PIN_LAYER = "landmark-pins"
 private const val PIN_IMAGE = "pin"
 private const val PIN_SELECTED_IMAGE = "pin-selected"
@@ -242,8 +245,15 @@ fun TopoMap(
             }
             m.addOnMapClickListener { latLng ->
                 val screen = m.projection.toScreenLocation(latLng)
+                // ghost dots are small; accept taps within about a fingertip of one, nearest dot wins
                 val ghostHit = if (m.style?.getLayer(GHOST_DOT_LAYER) != null) {
-                    m.queryRenderedFeatures(screen, GHOST_DOT_LAYER).firstOrNull()
+                    val slop = GHOST_TAP_SLOP_DP * mapView.resources.displayMetrics.density
+                    val box = RectF(screen.x - slop, screen.y - slop, screen.x + slop, screen.y + slop)
+                    m.queryRenderedFeatures(box, GHOST_DOT_LAYER).minByOrNull { f ->
+                        val p = f.geometry() as? Point ?: return@minByOrNull Float.MAX_VALUE
+                        val at = m.projection.toScreenLocation(LatLng(p.latitude(), p.longitude()))
+                        (at.x - screen.x) * (at.x - screen.x) + (at.y - screen.y) * (at.y - screen.y)
+                    }
                 } else null
                 val ghostId = ghostHit?.getNumberProperty("id")?.toLong()
                 val hit = if (ghostId == null && m.style?.getLayer(PIN_LAYER) != null) {
