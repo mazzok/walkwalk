@@ -130,6 +130,19 @@ private const val PIN_LAYER = "landmark-pins"
 private const val PIN_IMAGE = "pin"
 private const val PIN_SELECTED_IMAGE = "pin-selected"
 
+sealed interface TapTarget {
+    data class Pin(val id: Long) : TapTarget
+    data class Ghost(val id: Long) : TapTarget
+    data object None : TapTarget
+}
+
+/** What a map tap acts on: an exact pin hit beats the wider ghost tap area, which beats a plain map tap. */
+fun tapTarget(pinId: Long?, ghostId: Long?): TapTarget = when {
+    pinId != null -> TapTarget.Pin(pinId)
+    ghostId != null -> TapTarget.Ghost(ghostId)
+    else -> TapTarget.None
+}
+
 /** One point per landmark; `id` and `selected` drive hit testing and the icon choice. */
 fun landmarkFeatures(landmarks: List<Landmark>, selectedId: Long?): FeatureCollection =
     FeatureCollection.fromFeatures(landmarks.map {
@@ -245,8 +258,13 @@ fun TopoMap(
             }
             m.addOnMapClickListener { latLng ->
                 val screen = m.projection.toScreenLocation(latLng)
+                // an exact hit on a landmark pin wins over the ghost tap slop
+                val pinHit = if (m.style?.getLayer(PIN_LAYER) != null) {
+                    m.queryRenderedFeatures(screen, PIN_LAYER).firstOrNull()
+                } else null
+                val pinId = pinHit?.getNumberProperty("id")?.toLong()
                 // ghost dots are small; accept taps within about a fingertip of one, nearest dot wins
-                val ghostHit = if (m.style?.getLayer(GHOST_DOT_LAYER) != null) {
+                val ghostHit = if (pinId == null && m.style?.getLayer(GHOST_DOT_LAYER) != null) {
                     val slop = GHOST_TAP_SLOP_DP * mapView.resources.displayMetrics.density
                     val box = RectF(screen.x - slop, screen.y - slop, screen.x + slop, screen.y + slop)
                     m.queryRenderedFeatures(box, GHOST_DOT_LAYER).minByOrNull { f ->
@@ -256,13 +274,11 @@ fun TopoMap(
                     }
                 } else null
                 val ghostId = ghostHit?.getNumberProperty("id")?.toLong()
-                val hit = if (ghostId == null && m.style?.getLayer(PIN_LAYER) != null) {
-                    m.queryRenderedFeatures(screen, PIN_LAYER).firstOrNull()
-                } else null
-                val id = hit?.getNumberProperty("id")?.toLong()
-                if (ghostId != null) ghostClick(ghostId)
-                else if (id != null) landmarkClick(id)
-                else mapClick()
+                when (val t = tapTarget(pinId, ghostId)) {
+                    is TapTarget.Pin -> landmarkClick(t.id)
+                    is TapTarget.Ghost -> ghostClick(t.id)
+                    TapTarget.None -> mapClick()
+                }
                 true
             }
             m.addOnMapLongClickListener { latLng ->
