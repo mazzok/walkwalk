@@ -61,6 +61,7 @@ import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.module.http.HttpRequestUtil
 import org.maplibre.android.offline.OfflineManager
+import com.walkwalk.domain.AccelArrow
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.PropertyFactory
@@ -120,6 +121,7 @@ object MapSetup {
 
 private const val TRACK_SRC = "track"
 private const val HEAT_SRC = "heat"
+private const val GHOST_HEAT_SRC = "ghost-heat"
 private const val MARKER_SRC = "marker"
 private const val STOPS_SRC = "stops"
 private const val LANDMARKS_SRC = "landmarks"
@@ -128,6 +130,11 @@ private const val GHOST_DOTS_SRC = "ghost-dots"
 private const val GHOST_DOT_LAYER = "ghost-dot-layer"
 /** Tap tolerance around a ghost dot, in dp each way. */
 private const val GHOST_TAP_SLOP_DP = 20f
+private const val ARROWS_SRC = "accel-arrows"
+private const val ARROW_LAYER = "accel-arrows"
+private const val ARROW_IMAGE = "accel-arrow"
+/** Icon scale at the biggest arrow (`size` 1); the chevron bitmap is about 40 px wide. */
+private const val ARROW_ICON_SCALE = 0.9f
 private const val PIN_LAYER = "landmark-pins"
 private const val PIN_IMAGE = "pin"
 private const val PIN_SELECTED_IMAGE = "pin-selected"
@@ -153,6 +160,22 @@ fun landmarkFeatures(landmarks: List<Landmark>, selectedId: Long?): FeatureColle
             f.addBooleanProperty("selected", it.id == selectedId)
         }
     })
+
+/** A chevron tip (no tail) pointing north: white with a dark rim so it reads on blue and on red. */
+private fun arrowBitmap(): Bitmap {
+    val out = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
+    val tip = android.graphics.Path().apply {
+        moveTo(8f, 34f); lineTo(24f, 12f); lineTo(40f, 34f)
+    }
+    fun stroke(color: Int, width: Float) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeWidth = width; strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND; this.color = color
+    }
+    Canvas(out).apply {
+        drawPath(tip, stroke(android.graphics.Color.parseColor("#CC202020"), 11f))
+        drawPath(tip, stroke(android.graphics.Color.WHITE, 6f))
+    }
+    return out
+}
 
 /** ic_pin has a pure red body and white details; the matrix swaps red for [color] and leaves white alone. */
 private fun pinBitmap(context: Context, color: Int): Bitmap {
@@ -199,7 +222,15 @@ fun TopoMap(
     onGhostClick: (Long) -> Unit = {},
     // when set, replaces the plain track line with speed colours
     heatmap: SpeedHeatmap? = null,
+    // ghost trails coloured on the same range as [heatmap]; replaces the plain ghost trails while the heatmap is on
+    ghostHeatmaps: List<SpeedHeatmap> = emptyList(),
+    heatRange: ClosedFloatingPointRange<Double>? = null,
+    // each increase pans the camera to the marker once, keeping the zoom
+    recenterTick: Int = 0,
+    // arrowheads on the track showing how the speed changes; empty draws none
+    arrows: List<AccelArrow> = emptyList(),
 ) {
+    val markerNow by rememberUpdatedState(marker)
     val ghostClick by rememberUpdatedState(onGhostClick)
     val trackColorNow by rememberUpdatedState(trackColor)
     val context = LocalContext.current
@@ -296,6 +327,7 @@ fun TopoMap(
             m.setStyle(Style.Builder().fromJson(TopoStyle.json())) { s ->
                 s.addSource(GeoJsonSource(TRACK_SRC))
                 s.addSource(GeoJsonSource(HEAT_SRC))
+                s.addSource(GeoJsonSource(GHOST_HEAT_SRC))
                 s.addSource(GeoJsonSource(STOPS_SRC))
                 s.addSource(GeoJsonSource(MARKER_SRC))
                 s.addSource(GeoJsonSource(GHOST_TRAILS_SRC))
@@ -305,6 +337,12 @@ fun TopoMap(
                     PropertyFactory.lineWidth(3f),
                     PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round"),
                 ))
+                s.addLayer(LineLayer("ghost-heat-line", GHOST_HEAT_SRC).withProperties(
+                    PropertyFactory.lineColor(Expression.get("color")), PropertyFactory.lineOpacity(0.8f),
+                    PropertyFactory.lineWidth(3f),
+                    PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round"),
+                    PropertyFactory.visibility(Property.NONE),
+                ))
                 s.addLayer(LineLayer("track-line", TRACK_SRC).withProperties(
                     PropertyFactory.lineColor(colorHex(trackColorNow)), PropertyFactory.lineWidth(4f),
                     PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round"),
@@ -313,6 +351,17 @@ fun TopoMap(
                     PropertyFactory.lineColor(Expression.get("color")), PropertyFactory.lineWidth(4f),
                     PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round"),
                     PropertyFactory.visibility(Property.NONE),
+                ))
+                s.addSource(GeoJsonSource(ARROWS_SRC))
+                s.addImage(ARROW_IMAGE, arrowBitmap())
+                s.addLayer(SymbolLayer(ARROW_LAYER, ARROWS_SRC).withProperties(
+                    PropertyFactory.iconImage(ARROW_IMAGE),
+                    PropertyFactory.iconRotate(Expression.get("bearing")),
+                    PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
+                    PropertyFactory.iconSize(Expression.product(Expression.get("size"), Expression.literal(ARROW_ICON_SCALE))),
+                    // zoomed out, overlapping arrows drop out and the biggest ones are kept
+                    PropertyFactory.symbolSortKey(Expression.product(Expression.get("size"), Expression.literal(-1f))),
+                    PropertyFactory.iconAllowOverlap(false),
                 ))
                 s.addLayer(CircleLayer("stops-dot", STOPS_SRC).withProperties(
                     PropertyFactory.circleColor("#E0A030"), PropertyFactory.circleRadius(5f),
@@ -363,11 +412,25 @@ fun TopoMap(
         s.getLayerAs<LineLayer>("track-line")?.setProperties(PropertyFactory.lineColor(colorHex(trackColor)))
     }
 
-    LaunchedEffect(style, heatmap) {
+    LaunchedEffect(style, heatmap, ghostHeatmaps, heatRange) {
         val s = style ?: return@LaunchedEffect
-        if (heatmap != null) s.getSourceAs<GeoJsonSource>(HEAT_SRC)?.setGeoJson(heatmapFeatures(heatmap))
-        s.getLayerAs<LineLayer>("heat-line")?.setProperties(PropertyFactory.visibility(if (heatmap != null) Property.VISIBLE else Property.NONE))
-        s.getLayerAs<LineLayer>("track-line")?.setProperties(PropertyFactory.visibility(if (heatmap != null) Property.NONE else Property.VISIBLE))
+        val range = heatRange ?: heatmap?.let { it.minKmh..it.maxKmh }
+        val on = heatmap != null && range != null
+        if (heatmap != null && range != null) {
+            s.getSourceAs<GeoJsonSource>(HEAT_SRC)?.setGeoJson(heatmapFeatures(heatmap, range))
+            s.getSourceAs<GeoJsonSource>(GHOST_HEAT_SRC)?.setGeoJson(ghostHeatFeatures(ghostHeatmaps, range))
+        }
+        val ghostsHeated = on && ghostHeatmaps.isNotEmpty()
+        fun visible(v: Boolean) = PropertyFactory.visibility(if (v) Property.VISIBLE else Property.NONE)
+        s.getLayerAs<LineLayer>("heat-line")?.setProperties(visible(on))
+        s.getLayerAs<LineLayer>("track-line")?.setProperties(visible(!on))
+        s.getLayerAs<LineLayer>("ghost-heat-line")?.setProperties(visible(ghostsHeated))
+        s.getLayerAs<LineLayer>("ghost-trails")?.setProperties(visible(!ghostsHeated))
+    }
+
+    LaunchedEffect(style, arrows) {
+        val s = style ?: return@LaunchedEffect
+        s.getSourceAs<GeoJsonSource>(ARROWS_SRC)?.setGeoJson(arrowFeatures(arrows))
     }
 
     LaunchedEffect(style, stopMarkers) {
@@ -412,6 +475,13 @@ fun TopoMap(
             val zoom = if (m.cameraPosition.zoom < 12) 15.0 else m.cameraPosition.zoom
             m.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(marker.first, marker.second), zoom), 500)
         }
+    }
+
+    LaunchedEffect(recenterTick) {
+        if (recenterTick == 0) return@LaunchedEffect
+        val m = map ?: return@LaunchedEffect
+        val at = markerNow ?: return@LaunchedEffect
+        m.animateCamera(CameraUpdateFactory.newLatLng(LatLng(at.first, at.second)), 400)
     }
 
     Box(modifier) {

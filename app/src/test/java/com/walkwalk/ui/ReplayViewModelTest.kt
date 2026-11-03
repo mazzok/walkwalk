@@ -1,5 +1,6 @@
 package com.walkwalk.ui
 
+import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.walkwalk.data.HikeRepository
@@ -7,6 +8,7 @@ import com.walkwalk.data.WalkwalkDb
 import com.walkwalk.domain.ParsedGpx
 import com.walkwalk.domain.p
 import com.walkwalk.domain.straightLine
+import com.walkwalk.settings.AppSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -31,6 +33,7 @@ import java.util.concurrent.Executor
 class ReplayViewModelTest {
     private lateinit var db: WalkwalkDb
     private lateinit var repo: HikeRepository
+    private lateinit var settings: AppSettings
 
     @Before
     fun setUp() {
@@ -39,6 +42,8 @@ class ReplayViewModelTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), WalkwalkDb::class.java)
             .setQueryExecutor(direct).setTransactionExecutor(direct).allowMainThreadQueries().build()
         repo = HikeRepository(db)
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        settings = AppSettings(ctx.getSharedPreferences("replay-vm-test", Context.MODE_PRIVATE).also { it.edit().clear().commit() })
     }
 
     @After
@@ -52,7 +57,7 @@ class ReplayViewModelTest {
         val id = repo.startHike(0)
         straightLine(1.25, 2000, 600).forEach { repo.appendPoint(id, it) }
         repo.finish(id, 1_200_000)
-        return ReplayViewModel(repo, id).also { advanceUntilIdle() }
+        return ReplayViewModel(repo, id, settings).also { advanceUntilIdle() }
     }
 
     @Test
@@ -64,6 +69,18 @@ class ReplayViewModelTest {
         assertTrue(vm.showHeatmap.value)
         vm.toggleHeatmap()
         assertFalse(vm.showHeatmap.value)
+    }
+
+    @Test
+    fun arrowsAreOffUntilSwitchedOnAndIndependentOfTheHeatmap() = runTest {
+        val vm = walkVm()
+        assertFalse(vm.showArrows.value)
+        assertTrue(vm.arrows.value.isNotEmpty())
+        vm.toggleArrows()
+        assertTrue(vm.showArrows.value)
+        assertFalse(vm.showHeatmap.value)
+        vm.toggleArrows()
+        assertFalse(vm.showArrows.value)
     }
 
     @Test
@@ -124,7 +141,7 @@ class ReplayViewModelTest {
     @Test
     fun timelessHikeCannotPlay() = runTest {
         val id = repo.importGpx(ParsedGpx(null, listOf(p(0), p(1000, 47.001)), false), "r.gpx")
-        val vm = ReplayViewModel(repo, id).also { advanceUntilIdle() }
+        val vm = ReplayViewModel(repo, id, settings).also { advanceUntilIdle() }
         assertFalse(vm.canPlay.value)
         vm.togglePlay()
         assertFalse(vm.playing.value)

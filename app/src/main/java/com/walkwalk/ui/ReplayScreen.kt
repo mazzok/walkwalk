@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AssistChip
@@ -21,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.walkwalk.map.GhostMarker
 import com.walkwalk.map.TopoMap
 import com.walkwalk.ui.landmarks.LandmarkLayer
 import com.walkwalk.ui.landmarks.LandmarksViewModel
@@ -53,7 +56,14 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
     val stopPositions by vm.stopPositions.collectAsState()
     val heatmap by vm.heatmap.collectAsState()
     val showHeatmap by vm.showHeatmap.collectAsState()
+    val arrows by vm.arrows.collectAsState()
+    val showArrows by vm.showArrows.collectAsState()
+    val ghostViews by vm.ghostViews.collectAsState()
+    val shownTrails by vm.shownTrails.collectAsState()
+    val ghostHeatmaps by vm.ghostHeatmaps.collectAsState()
+    val heatRange by vm.heatRange.collectAsState()
     var expanded by remember { mutableStateOf(false) }
+    var recenterTick by remember { mutableStateOf(0) }
 
     LandmarkLayer(landmarks, hike, canCamera = false) { args -> Box(Modifier.fillMaxSize()) {
         TopoMap(
@@ -71,7 +81,23 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
             selectedOverlay = args.selectedOverlay,
             trackColor = trackColor,
             heatmap = if (showHeatmap) heatmap else null,
+            ghosts = ghostViews.map { GhostMarker(it.id, it.colorArgb, it.lat, it.lon) },
+            ghostTrails = shownTrails,
+            onGhostClick = vm::toggleTrail,
+            ghostHeatmaps = ghostHeatmaps,
+            heatRange = heatRange,
+            recenterTick = recenterTick,
+            arrows = if (showArrows) arrows else emptyList(),
         )
+
+        if (frame != null) {
+            SmallFloatingActionButton(
+                onClick = { recenterTick++ },
+                modifier = Modifier.align(Alignment.CenterEnd).padding(12.dp),
+            ) {
+                Icon(Icons.Default.MyLocation, contentDescription = "Re-centre")
+            }
+        }
 
         val h = hike
         val f = frame
@@ -96,7 +122,7 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
                         "km" to Format.km2(f.distanceM),
                         "m ↑" to Format.meters(f.ascentM),
                     )
-                    heatmap?.takeIf { showHeatmap }?.let { SpeedLegend(it.minKmh, it.maxKmh) }
+                    heatRange?.takeIf { showHeatmap }?.let { SpeedLegend(it.start, it.endInclusive) }
                     if (expanded) {
                         Text(
                             "Total ${Format.km(h.distanceM)} · ${Format.duration(h.totalMs)} total · ${Format.duration(h.movingMs)} moving\n" +
@@ -109,6 +135,10 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Show speed heatmap", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                             Switch(checked = showHeatmap, onCheckedChange = { vm.toggleHeatmap() })
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Show acceleration arrows", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            Switch(checked = showArrows, onCheckedChange = { vm.toggleArrows() })
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(

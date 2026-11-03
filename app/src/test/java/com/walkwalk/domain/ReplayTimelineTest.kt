@@ -50,6 +50,30 @@ class ReplayTimelineTest {
     }
 
     @Test
+    fun activeElapsedSkipsPausesBetweenSegments() {
+        val points = straightLine(1.0, 5_000, 5, seg = 0) +
+            straightLine(1.0, 5_000, 5, startTime = 620_000, seg = 1, startLat = 47.01)
+        val f = ReplayTimeline(points, emptyList()).frameAt(20_000)
+        assertEquals(620_000L, f.elapsedMs)
+        assertEquals(20_000L, f.activeMs)
+    }
+
+    @Test
+    fun activeElapsedEqualsElapsedWithoutPauses() {
+        val f = ReplayTimeline(straightLine(1.0, 5_000, 20), emptyList()).frameAt(40_000)
+        assertEquals(40_000L, f.elapsedMs)
+        assertEquals(f.elapsedMs, f.activeMs)
+    }
+
+    @Test
+    fun activeElapsedKeepsRunningThroughAStop() {
+        val t = ReplayTimeline(walkStandWalk(walkMs = 600_000, standMs = 1_800_000), listOf(Stop(600_000, 2_400_000)))
+        val f = t.frameAt(600_000 + 15_000) // half way through the compressed stop
+        assertEquals(1_500_000L, f.elapsedMs)
+        assertEquals(1_500_000L, f.activeMs)
+    }
+
+    @Test
     fun frameClampsOutOfRange() {
         val t = ReplayTimeline(twoSegments(), emptyList())
         assertEquals(0L, t.frameAt(-10).elapsedMs)

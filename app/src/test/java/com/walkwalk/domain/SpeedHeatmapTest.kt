@@ -80,6 +80,29 @@ class SpeedHeatmapTest {
     }
 
     @Test
+    fun combinedRangeSpansAllHeatmaps() {
+        val slow = SpeedHeatmap.of(straightLine(1.0, 5_000, 20), emptyList())
+        val fast = SpeedHeatmap.of(straightLine(2.0, 5_000, 20), emptyList())
+        val r = SpeedHeatmap.combinedRange(listOf(slow, fast))
+        assertEquals(3.6, r.start, 0.2)
+        assertEquals(7.2, r.endInclusive, 0.2)
+    }
+
+    @Test
+    fun combinedRangeIgnoresHeatmapsWithoutMovingEdges() {
+        val still = SpeedHeatmap.of((0 until 6).map { p(it * 5_000L) }, emptyList())
+        val slow = SpeedHeatmap.of(straightLine(1.0, 5_000, 20), emptyList())
+        assertTrue(!still.hasMoving)
+        assertTrue(slow.hasMoving)
+        assertEquals(3.6, SpeedHeatmap.combinedRange(listOf(still, slow)).start, 0.2)
+    }
+
+    @Test
+    fun combinedRangeOfNothingIsZero() {
+        assertEquals(0.0..0.0, SpeedHeatmap.combinedRange(emptyList()))
+    }
+
+    @Test
     fun emptyOrSinglePointTrackHasNoEdges() {
         assertTrue(SpeedHeatmap.of(emptyList(), emptyList()).edges.isEmpty())
         assertNull(SpeedHeatmap.of(listOf(p(0)), emptyList()).edges.firstOrNull())

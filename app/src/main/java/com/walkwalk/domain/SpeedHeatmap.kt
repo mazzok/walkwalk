@@ -7,7 +7,16 @@ data class SpeedEdge(val from: TrackPoint, val to: TrackPoint, val speedKmh: Dou
 
 /** Per-edge speeds of a hike plus the slowest and fastest moving speed, which scale the heatmap colours. */
 class SpeedHeatmap private constructor(val edges: List<SpeedEdge>, val minKmh: Double, val maxKmh: Double) {
+    val hasMoving: Boolean get() = edges.any { it.speedKmh != null }
+
     companion object {
+        /** One range over several heatmaps; those without a moving edge would only drag the minimum to 0. */
+        fun combinedRange(heats: List<SpeedHeatmap>): ClosedFloatingPointRange<Double> {
+            val moving = heats.filter { it.hasMoving }
+            if (moving.isEmpty()) return 0.0..0.0
+            return moving.minOf { it.minKmh }..moving.maxOf { it.maxKmh }
+        }
+
         private const val REST_BELOW_KMH = 0.05
 
         fun of(points: List<TrackPoint>, stops: List<Stop>): SpeedHeatmap {

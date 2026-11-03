@@ -24,6 +24,9 @@ class GhostTrack(val points: List<TrackPoint>) {
     val totalMs: Long = elapsed.lastOrNull() ?: 0L
     val totalDistanceM: Double = cumDist.lastOrNull() ?: 0.0
 
+    /** Elapsed time at the [i]-th point, on the same clock as [positionAt]. */
+    fun elapsedAtIndex(i: Int): Long = elapsed[i]
+
     fun positionAt(clockMs: Long): Pair<Double, Double> {
         if (points.isEmpty()) return 0.0 to 0.0
         val t = clockMs.coerceIn(0L, totalMs)

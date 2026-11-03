@@ -13,6 +13,8 @@ data class ReplayFrame(
     /** Ascent so far. */
     val ascentM: Double,
     val inStop: Boolean,
+    /** Like [elapsedMs] but without the pauses between segments: the clock a ghost's hike runs on. */
+    val activeMs: Long,
 )
 
 /**
@@ -29,6 +31,12 @@ class ReplayTimeline(private val points: List<TrackPoint>, stops: List<Stop>) {
     private val cumAscent: DoubleArray
     private val altitudes: DoubleArray?
     private val speeds = Stats.speedsKmh(points)
+    // time since the first fix, counting only time inside segments
+    private val active = LongArray(points.size).also { a ->
+        for (i in 1 until points.size) {
+            a[i] = a[i - 1] + if (points[i].segment == points[i - 1].segment) points[i].time - points[i - 1].time else 0L
+        }
+    }
 
     val durationMs: Long
     val stopMarkers: List<LongRange>
@@ -85,7 +93,7 @@ class ReplayTimeline(private val points: List<TrackPoint>, stops: List<Stop>) {
     }
 
     fun frameAt(replayMs: Long): ReplayFrame {
-        if (points.isEmpty()) return ReplayFrame(0, 0, 0.0, 0.0, null, 0.0, 0.0, 0.0, false)
+        if (points.isEmpty()) return ReplayFrame(0, 0, 0.0, 0.0, null, 0.0, 0.0, 0.0, false, 0)
         val r = replayMs.coerceIn(0, durationMs)
         val piece = pieceForReplay(r)
         val real = if (piece.replayLen == 0L) piece.realStart
@@ -105,6 +113,7 @@ class ReplayTimeline(private val points: List<TrackPoint>, stops: List<Stop>) {
             distanceM = lerp(cumDist[i], cumDist[j]),
             ascentM = cumAscent[i],
             inStop = piece.stop,
+            activeMs = activeAt(real),
         )
     }
 
@@ -136,6 +145,12 @@ class ReplayTimeline(private val points: List<TrackPoint>, stops: List<Stop>) {
     }
 
     /** Index of the last point at or before [time] and the fraction towards the next point. */
+    private fun activeAt(time: Long): Long {
+        val (i, f) = locate(time)
+        val j = minOf(i + 1, points.size - 1)
+        return active[i] + ((active[j] - active[i]) * f).toLong()
+    }
+
     private fun locate(time: Long): Pair<Int, Double> {
         var idx = times.binarySearch(time)
         if (idx >= 0) return idx to 0.0

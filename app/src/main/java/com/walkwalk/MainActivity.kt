@@ -218,7 +218,7 @@ class MainActivity : ComponentActivity() {
             }
             composable("replay/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
                 val id = entry.arguments!!.getLong("id")
-                val vm = viewModel(key = "replay-$id") { ReplayViewModel(app.repository, id) }
+                val vm = viewModel(key = "replay-$id") { ReplayViewModel(app.repository, id, app.settings) }
                 val trackColor by app.settings.trackColor.collectAsState()
                 ReplayScreen(vm, landmarksFor(id), onBack = { nav.popBackStack(LIST, inclusive = false) }, trackColor = trackColor, onCorrectAltitude = {
                     scope.launch {
