@@ -126,17 +126,17 @@ class ReplayViewModel(
                 emptyList()
             }
             shownIds = null
-            _frame.value?.let { refreshGhosts(it.activeMs) }
+            _frame.value?.let { refreshGhosts(it) }
         }
     }
 
     fun toggleTrail(id: Long) {
         _openTrails.value = if (id in _openTrails.value) _openTrails.value - id else _openTrails.value + id
-        _frame.value?.let { refreshGhosts(it.activeMs) }
+        _frame.value?.let { refreshGhosts(it) }
     }
 
-    private fun refreshGhosts(activeMs: Long) {
-        val views = replayGhostViews(ghosts, activeMs, settings.trackColor.value)
+    private fun refreshGhosts(f: ReplayFrame) {
+        val views = replayGhostViews(ghosts, f.activeMs, settings.trackColor.value, f.distanceM)
         _ghostViews.value = views
         val shown = views.filter { it.id in _openTrails.value }
         val ids = shown.map { it.id }
@@ -156,7 +156,7 @@ class ReplayViewModel(
         _replayMs.value = clamped
         val f = t.frameAt(clamped)
         _frame.value = f
-        refreshGhosts(f.activeMs)
+        refreshGhosts(f)
     }
 
     fun seekToDistance(m: Double) {

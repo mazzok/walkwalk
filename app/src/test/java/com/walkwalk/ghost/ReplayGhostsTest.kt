@@ -59,6 +59,20 @@ class ReplayGhostsTest {
     }
 
     @Test
+    fun deltaComparesTimeAtTheSameDistanceLikeLiveMode() {
+        // 100 m covered in 130 s; the ghost (1 m/s) took 100 s for that distance -> 30 s behind
+        val v = replayGhostViews(listOf(ghost(1, null)), 130_000, 0xFFCC3333.toInt(), distanceM = 100.0).single()
+        assertEquals(aheadBehindMs(ghostTrack, 100.0, 130_000), v.deltaMs)
+        assertEquals(30_000.0, v.deltaMs!!.toDouble(), 1_000.0)
+    }
+
+    @Test
+    fun noDeltaBeforeTheMinimumDistance() {
+        val v = replayGhostViews(listOf(ghost(1, null)), 20_000, 0xFFCC3333.toInt(), distanceM = 20.0).single()
+        assertNull(v.deltaMs)
+    }
+
+    @Test
     fun vanishedGhostsAreLeftOut() {
         val views = replayGhostViews(listOf(ghost(1, 50_000), ghost(2, null)), 60_000, 0xFFCC3333.toInt())
         assertEquals(listOf(2L), views.map { it.id })

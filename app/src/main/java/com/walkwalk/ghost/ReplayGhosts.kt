@@ -35,14 +35,17 @@ fun vanishMomentMs(hikePoints: List<TrackPoint>, ghost: GhostTrack, limitM: Int)
     return null
 }
 
-/** The ghosts visible at [elapsedMs]; colours follow a ghost's place in the full list, so they never shift. */
-fun replayGhostViews(ghosts: List<ReplayGhost>, elapsedMs: Long, trackColor: Int): List<GhostView> {
+/**
+ * The ghosts visible at [elapsedMs]; colours follow a ghost's place in the full list, so they never shift.
+ * [distanceM] is how far the replayed hike has come by then, for the same ahead/behind time as live mode.
+ */
+fun replayGhostViews(ghosts: List<ReplayGhost>, elapsedMs: Long, trackColor: Int, distanceM: Double = 0.0): List<GhostView> {
     val colors = ghostColors(ghosts.size, trackColor)
     return ghosts.withIndex().filter { (_, g) -> g.visibleAt(elapsedMs) }.map { (i, g) ->
         val (lat, lon) = g.track.positionAt(elapsedMs)
         GhostView(
             id = g.id, name = g.name, colorArgb = colors[i], lat = lat, lon = lon,
-            deltaMs = null,
+            deltaMs = aheadBehindMs(g.track, distanceM, elapsedMs),
             finishedMs = if (elapsedMs >= g.track.totalMs) g.track.totalMs else null,
         )
     }
