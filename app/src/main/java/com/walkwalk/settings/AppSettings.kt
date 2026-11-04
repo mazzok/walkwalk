@@ -18,6 +18,10 @@ class AppSettings(private val prefs: SharedPreferences) {
     )
     val ghostDropM: StateFlow<Int> = _ghostDropM
 
+    // the hike started as a race, kept so a restarted recording carries on racing
+    private val _raceHikeId = MutableStateFlow(prefs.getLong(KEY_RACE_HIKE_ID, -1).takeIf { it >= 0 })
+    val raceHikeId: StateFlow<Long?> = _raceHikeId
+
     fun setTrackColor(argb: Int) {
         prefs.edit().putInt(KEY_TRACK_COLOR, argb).apply()
         _trackColor.value = argb
@@ -34,6 +38,11 @@ class AppSettings(private val prefs: SharedPreferences) {
         _ghostDropM.value = m
     }
 
+    fun setRaceHikeId(id: Long?) {
+        prefs.edit().apply { if (id == null) remove(KEY_RACE_HIKE_ID) else putLong(KEY_RACE_HIKE_ID, id) }.apply()
+        _raceHikeId.value = id
+    }
+
     companion object {
         val DROP_OPTIONS = listOf(0, 100, 200, 500)
         const val DEFAULT_DROP_M = 200
@@ -41,5 +50,6 @@ class AppSettings(private val prefs: SharedPreferences) {
         private const val KEY_TRACK_COLOR = "track_color"
         private const val KEY_GHOST_MODE = "ghost_mode"
         private const val KEY_GHOST_DROP_M = "ghost_drop_m"
+        private const val KEY_RACE_HIKE_ID = "race_hike_id"
     }
 }

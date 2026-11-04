@@ -8,6 +8,7 @@ import com.walkwalk.data.WalkwalkDb
 import com.walkwalk.ghost.GhostSession
 import com.walkwalk.map.MapSetup
 import com.walkwalk.photos.PhotoStore
+import com.walkwalk.race.RaceSession
 import com.walkwalk.settings.AppSettings
 import com.walkwalk.recording.BaroPressureSource
 import com.walkwalk.recording.DemoMode
@@ -44,6 +45,8 @@ class WalkwalkApp : Application() {
 
     val ghosts: GhostSession by lazy { GhostSession(repository, settings) }
 
+    val race: RaceSession by lazy { RaceSession(repository) }
+
     val demo: DemoMode by lazy { DemoMode(this) }
 
     val recording: RecordingController by lazy {
@@ -60,7 +63,7 @@ class WalkwalkApp : Application() {
     /** Ends the hike (the user pressed Stop) and corrects its altitude in the background when online. */
     suspend fun stopRecording(): Long? {
         // runs in the app scope so a screen going away mid-stop can't leave a half-finished hike
-        val id = appScope.async { recording.stop().also { demo.disable() } }.await() ?: return null
+        val id = appScope.async { recording.stop().also { demo.disable(); settings.setRaceHikeId(null) } }.await() ?: return null
         appScope.launch { corrector.correct(id) }
         return id
     }

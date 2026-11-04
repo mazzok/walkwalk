@@ -137,6 +137,23 @@ class MainActivity : ComponentActivity() {
                 scope.launch { snackbar.showSnackbar("Location permission is needed to record a hike.") }
             }
         }
+        val startRace = rememberPermissionFlow { canRecord ->
+            if (canRecord) {
+                RecordingService.send(this, RecordingService.ACTION_START_RACE)
+                nav.navigate(RECORDING) { launchSingleTop = true }
+            } else {
+                scope.launch { snackbar.showSnackbar("Location permission is needed to record a hike.") }
+            }
+        }
+        val startRaceDemo = rememberPermissionFlow { canRecord ->
+            if (canRecord) {
+                app.demo.enable()
+                RecordingService.send(this, RecordingService.ACTION_START_RACE)
+                nav.navigate(RECORDING) { launchSingleTop = true }
+            } else {
+                scope.launch { snackbar.showSnackbar("Location permission is needed to record a hike.") }
+            }
+        }
         val pickGpx =rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) scope.launch { importFile(uri, nav, snackbar) }
         }
@@ -166,7 +183,9 @@ class MainActivity : ComponentActivity() {
                     },
                     onOpen = { nav.navigate("replay/$it") },
                     onStartHike = startWithPermissions,
+                    onStartRace = startRace,
                     onStartDemo = if (BuildConfig.DEBUG) startDemo else null,
+                    onStartRaceDemo = if (BuildConfig.DEBUG) startRaceDemo else null,
                     onImport = { pickGpx.launch(arrayOf("*/*")) },
                     onExport = { hike -> scope.launch { exportGpx(hike) } },
                     onSend = { hike -> scope.launch { sendHike(hike, snackbar) { bigSend = it } } },
@@ -213,6 +232,7 @@ class MainActivity : ComponentActivity() {
                     },
                     landmarks = landmarks,
                     ghosts = app.ghosts,
+                    race = app.race,
                     trackColor = trackColor,
                 )
             }

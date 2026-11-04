@@ -115,7 +115,8 @@ class GhostSession(
     private fun startLoadLocked(forHike: Long, start: TrackPoint) {
         if (loadJob?.isActive == true) return
         failedAt?.let { if (clock() - it < LOAD_RETRY_MS) return }
-        if (!settings.ghostMode.value) {
+        // a race shows its ghosts even with ghost mode off
+        if (!settings.ghostMode.value && settings.raceHikeId.value != forHike) {
             loaded = emptyList()
             initialized = true
             return

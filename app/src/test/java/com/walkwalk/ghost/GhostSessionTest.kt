@@ -69,6 +69,17 @@ class GhostSessionTest {
     private val start = listOf(p(0))
 
     @Test
+    fun racingHikeLoadsGhostsWithGhostModeOff() = runTest {
+        settings.setGhostMode(false)
+        settings.setRaceHikeId(1)
+        seed(oldWalk)
+        session.tick(1, start, 0, 0.0)
+        assertEquals(1, session.state.value.views.size)
+        session.tick(2, start, 0, 0.0)
+        assertTrue(session.state.value.views.isEmpty())
+    }
+
+    @Test
     fun ghostOffByDefault() = runTest {
         settings.setGhostMode(false)
         seed(oldWalk)

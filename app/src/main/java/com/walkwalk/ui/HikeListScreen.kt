@@ -64,8 +64,10 @@ fun HikeListScreen(
     onReplaceActive: (startNew: () -> Unit) -> Unit,
     onOpen: (Long) -> Unit,
     onStartHike: () -> Unit,
+    onStartRace: () -> Unit,
     // debug builds only: replays a bundled route instead of GPS
     onStartDemo: (() -> Unit)?,
+    onStartRaceDemo: (() -> Unit)?,
     onImport: () -> Unit,
     onExport: (HikeEntity) -> Unit,
     onSend: (HikeEntity) -> Unit,
@@ -95,7 +97,9 @@ fun HikeListScreen(
         bottomBar = {
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { startOrConfirm(onStartHike) }, modifier = Modifier.weight(1f)) { Text("Start hike") }
+                OutlinedButton(onClick = { startOrConfirm(onStartRace) }) { Text("Race") }
                 onStartDemo?.let { OutlinedButton(onClick = { startOrConfirm(it) }) { Text("Demo") } }
+                onStartRaceDemo?.let { OutlinedButton(onClick = { startOrConfirm(it) }) { Text("Race demo") } }
                 OutlinedButton(onClick = onImport) { Text("Import") }
             }
         },

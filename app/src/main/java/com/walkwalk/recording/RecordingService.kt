@@ -7,11 +7,14 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.util.Log
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.walkwalk.MainActivity
 import com.walkwalk.WalkwalkApp
 import com.walkwalk.data.HikeStatus
+import com.walkwalk.race.RaceAudio
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.launch
@@ -25,6 +28,7 @@ class RecordingService : LifecycleService() {
     private val app get() = application as WalkwalkApp
     private var lastNotified = 0L
     private var observing = false
+    private val raceAudio by lazy { RaceAudio(this, lifecycleScope) }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
@@ -38,7 +42,11 @@ class RecordingService : LifecycleService() {
         val controller = app.recording
         lifecycleScope.launch {
             when (intent?.action) {
-                ACTION_START -> controller.start()
+                ACTION_START -> controller.start().let { id ->
+                    // continuing an unfinished race keeps racing; any other hike is a normal one
+                    if (app.settings.raceHikeId.value != id) app.settings.setRaceHikeId(null)
+                }
+                ACTION_START_RACE -> app.settings.setRaceHikeId(controller.start())
                 ACTION_PAUSE -> controller.pause()
                 ACTION_RESUME -> controller.resume()
                 else -> controller.restoreActive()
@@ -55,16 +63,39 @@ class RecordingService : LifecycleService() {
                 // ignore the initial null until start/restore has published; afterwards null means Stop
                 controller.state.dropWhile { it == null }.collectLatest { s ->
                     if (s == null) {
+                        // Stop, or detach() from onDestroy: either way silence now. The race flag is cleared
+                        // only by an explicit Stop (WalkwalkApp.stopRecording), so a restart keeps racing.
+                        raceAudio.stop()
+                        app.race.reset()
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         stopSelf()
-                    } else if (s.status == HikeStatus.PAUSED || System.currentTimeMillis() - lastNotified >= NOTIFY_EVERY_MS) {
-                        lastNotified = System.currentTimeMillis()
-                        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(s))
+                    } else {
+                        if (s.status == HikeStatus.PAUSED || System.currentTimeMillis() - lastNotified >= NOTIFY_EVERY_MS) {
+                            lastNotified = System.currentTimeMillis()
+                            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(s))
+                        }
+                        race(s)
                     }
                 }
             }
         }
         return START_STICKY
+    }
+
+    /**
+     * Feeds a race hike's progress to the race and keeps its sound going. Driven from here, not the screen,
+     * so it carries on with the screen off; a failure is logged and never reaches the recording.
+     */
+    private suspend fun race(s: LiveState) {
+        if (s.hikeId != app.settings.raceHikeId.value) return
+        try {
+            app.race.update(s.hikeId, s.track, s.elapsedMs, s.distanceM, s.status == HikeStatus.PAUSED)
+            raceAudio.start(app.race.state)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("walkwalk", "race update failed", e)
+        }
     }
 
     /**
@@ -90,6 +121,8 @@ class RecordingService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        // the race flag stays, so a restarted service carries on racing
+        raceAudio.stop()
         // Stopping the GPS is fine; the hike itself stays active until the user presses Stop.
         if (app.recording.state.value != null) app.recording.detach()
         super.onDestroy()
@@ -120,6 +153,7 @@ class RecordingService : LifecycleService() {
 
     companion object {
         const val ACTION_START = "com.walkwalk.START"
+        const val ACTION_START_RACE = "com.walkwalk.START_RACE"
         const val ACTION_PAUSE = "com.walkwalk.PAUSE"
         const val ACTION_RESUME = "com.walkwalk.RESUME"
         private const val CHANNEL = "recording"

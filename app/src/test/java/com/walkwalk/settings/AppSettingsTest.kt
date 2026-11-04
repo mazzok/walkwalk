@@ -35,6 +35,14 @@ class AppSettingsTest {
     }
 
     @Test
+    fun raceHikeIdPersists() {
+        AppSettings(prefs).setRaceHikeId(7)
+        assertEquals(7L, AppSettings(prefs).raceHikeId.value)
+        AppSettings(prefs).setRaceHikeId(null)
+        assertEquals(null, AppSettings(prefs).raceHikeId.value)
+    }
+
+    @Test
     fun flowsEmitOnChange() {
         val settings = AppSettings(prefs)
         settings.setGhostMode(true)

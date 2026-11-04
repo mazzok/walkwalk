@@ -12,6 +12,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import com.walkwalk.ghost.GhostSession
+import com.walkwalk.race.RaceSession
 import com.walkwalk.map.GhostMarker
 import com.walkwalk.map.GhostTrail
 import kotlinx.coroutines.CancellationException
@@ -95,6 +96,7 @@ fun RecordingScreen(
     onSaveUnfinished: (Long) -> Unit,
     landmarks: LandmarksViewModel?,
     ghosts: GhostSession,
+    race: RaceSession,
     trackColor: Int,
 ) {
     val context = LocalContext.current
@@ -156,6 +158,8 @@ fun RecordingScreen(
     val ghostState by ghosts.state.collectAsState()
     // the session is shared: until it has caught up with this hike it still holds the previous one's ghosts
     val ghostViews = ghostState.viewsFor(s.hikeId)
+    val raceState by race.state.collectAsState()
+    val rivalName = raceState.rivalName?.takeIf { raceState.hikeId == s.hikeId }
     var openTrails by remember { mutableStateOf(setOf<Long>()) }
     val toggleTrail = { id: Long -> openTrails = if (id in openTrails) openTrails - id else openTrails + id }
 
@@ -217,6 +221,7 @@ fun RecordingScreen(
             if (ghostViews.isNotEmpty()) {
                 Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     Column(Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp)) {
+                        rivalName?.let { Text("Racing $it", style = MaterialTheme.typography.labelMedium) }
                         ghostViews.forEach { g ->
                             Row(
                                 Modifier.fillMaxWidth().clickable { toggleTrail(g.id) }.padding(vertical = 4.dp),
