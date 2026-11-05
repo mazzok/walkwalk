@@ -9,6 +9,7 @@ import com.walkwalk.ghost.GhostSession
 import com.walkwalk.map.MapSetup
 import com.walkwalk.photos.PhotoStore
 import com.walkwalk.race.RaceSession
+import com.walkwalk.routes.RouteGroups
 import com.walkwalk.settings.AppSettings
 import com.walkwalk.recording.BaroPressureSource
 import com.walkwalk.recording.DemoMode
@@ -46,6 +47,8 @@ class WalkwalkApp : Application() {
     val ghosts: GhostSession by lazy { GhostSession(repository, settings) }
 
     val race: RaceSession by lazy { RaceSession(repository) }
+
+    val routeGroups: RouteGroups by lazy { RouteGroups(repository, settings.routeGroupM) }
 
     val demo: DemoMode by lazy { DemoMode(this) }
 

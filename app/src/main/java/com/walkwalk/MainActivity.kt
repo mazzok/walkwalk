@@ -166,7 +166,7 @@ class MainActivity : ComponentActivity() {
                 val l = live
                 val u = unfinished
                 HikeListScreen(
-                    repo = app.repository,
+                    routeGroups = app.routeGroups,
                     snackbar = snackbar,
                     active = when {
                         l != null -> ActiveHike(u?.name ?: "Hike", l.status, l.distanceM, l.elapsedMs)
@@ -190,6 +190,7 @@ class MainActivity : ComponentActivity() {
                     onExport = { hike -> scope.launch { exportGpx(hike) } },
                     onSend = { hike -> scope.launch { sendHike(hike, snackbar) { bigSend = it } } },
                     onRename = { hike, name -> scope.launch { app.repository.rename(hike.id, name) } },
+                    onNameRoute = { hikes, name -> scope.launch { app.repository.nameRoute(hikes.map { it.id }, name) } },
                     onOpenSettings = { nav.navigate(SETTINGS) { launchSingleTop = true } },
                     onDelete = { hike ->
                         scope.launch {

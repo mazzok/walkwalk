@@ -43,12 +43,15 @@ class MigrationTest {
         old.close()
 
         val db = Room.databaseBuilder(ctx, WalkwalkDb::class.java, "migration-test.db")
-            .addMigrations(WalkwalkDb.MIGRATION_1_2).allowMainThreadQueries().build()
+            .addMigrations(WalkwalkDb.MIGRATION_1_2, WalkwalkDb.MIGRATION_2_3).allowMainThreadQueries().build()
         try {
             val repo = HikeRepository(db)
             val hike = repo.finishedHikes().single()
             assertEquals("Old hike", hike.name)
             assertNull(hike.bundleId)
+            assertNull(hike.routeName)
+            repo.nameRoute(listOf(hike.id), "A nach B")
+            assertEquals("A nach B", repo.finishedHikes().single().routeName)
             assertEquals(2, repo.points(hike.id).size)
             assertEquals(1, repo.stops(hike.id).size)
             repo.addLandmark(hike.id, 48.0, 16.0, null)

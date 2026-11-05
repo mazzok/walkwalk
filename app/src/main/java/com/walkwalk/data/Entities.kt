@@ -33,6 +33,8 @@ data class HikeEntity(
     val maxSpeedKmh: Double = 0.0,
     // set on first share; lets an imported bundle find the hike it came from
     val bundleId: String? = null,
+    // the name the user gave the route this hike belongs to (set on every hike of a group at once)
+    val routeName: String? = null,
 ) {
     fun withStats(s: HikeStats) = copy(
         distanceM = s.distanceM, totalMs = s.totalMs, movingMs = s.movingMs, ascentM = s.ascentM,

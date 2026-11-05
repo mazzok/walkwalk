@@ -55,6 +55,24 @@ class AppSettingsTest {
     }
 
     @Test
+    fun routeGroupDistanceDefaultsAndPersists() {
+        assertEquals(50, AppSettings(prefs).routeGroupM.value)
+        AppSettings(prefs).setRouteGroupM(0)
+        assertEquals(0, AppSettings(prefs).routeGroupM.value)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun setRouteGroupMRejectsUnsupportedValue() {
+        AppSettings(prefs).setRouteGroupM(33)
+    }
+
+    @Test
+    fun unknownRouteGroupValueFallsBackToDefault() {
+        prefs.edit().putInt("route_group_m", 33).commit()
+        assertEquals(50, AppSettings(prefs).routeGroupM.value)
+    }
+
+    @Test
     fun unknownDropValueFallsBackToDefault() {
         prefs.edit().putInt("ghost_drop_m", 123).commit()
         assertEquals(200, AppSettings(prefs).ghostDropM.value)

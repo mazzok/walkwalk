@@ -116,6 +116,15 @@ class HikeRepositoryTest {
     }
 
     @Test
+    fun nameRouteSetsTheNameOnEveryGivenHike() = runTest {
+        val a = repo.startHike(1000); repo.finish(a, 2000)
+        val b = repo.startHike(5000); repo.finish(b, 6000)
+        val c = repo.startHike(7000); repo.finish(c, 8000)
+        repo.nameRoute(listOf(a, b), "A nach B")
+        assertEquals(listOf(null, "A nach B", "A nach B"), repo.finishedHikes().map { it.routeName })
+    }
+
+    @Test
     fun ghostCandidatesOnlyFinishedTimedHikesWithTwoPoints() = runTest {
         val dao = db.hikeDao()
         suspend fun hike(status: HikeStatus, hasTimes: Boolean, pts: Int): Long {

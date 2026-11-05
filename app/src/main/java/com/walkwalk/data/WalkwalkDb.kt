@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [HikeEntity::class, TrackPointEntity::class, StopEntity::class, LandmarkEntity::class, LandmarkPhotoEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class WalkwalkDb : RoomDatabase() {
@@ -28,7 +28,13 @@ abstract class WalkwalkDb : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `HikeEntity` ADD COLUMN `routeName` TEXT")
+            }
+        }
+
         fun create(context: Context): WalkwalkDb =
-            Room.databaseBuilder(context, WalkwalkDb::class.java, "walkwalk.db").addMigrations(MIGRATION_1_2).build()
+            Room.databaseBuilder(context, WalkwalkDb::class.java, "walkwalk.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
     }
 }

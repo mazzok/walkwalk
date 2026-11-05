@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Settings
@@ -47,8 +49,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.walkwalk.data.HikeEntity
-import com.walkwalk.data.HikeRepository
 import com.walkwalk.data.HikeStatus
+import com.walkwalk.routes.HikeListEntry
+import com.walkwalk.routes.RouteGroups
 
 /** The hike that is still open (recording in the background, paused, or interrupted); [status] null = interrupted. */
 data class ActiveHike(val name: String, val status: HikeStatus?, val distanceM: Double, val elapsedMs: Long)
@@ -56,7 +59,7 @@ data class ActiveHike(val name: String, val status: HikeStatus?, val distanceM: 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HikeListScreen(
-    repo: HikeRepository,
+    routeGroups: RouteGroups,
     snackbar: SnackbarHostState,
     active: ActiveHike?,
     onOpenActive: () -> Unit,
@@ -72,11 +75,16 @@ fun HikeListScreen(
     onExport: (HikeEntity) -> Unit,
     onSend: (HikeEntity) -> Unit,
     onRename: (HikeEntity, String) -> Unit,
+    onNameRoute: (List<HikeEntity>, String) -> Unit,
     onDelete: (HikeEntity) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    val hikes by repo.observeFinishedHikes().collectAsState(initial = emptyList())
+    // null until the first grouping is done, so "No hikes yet" never flashes
+    val entries by remember(routeGroups) { routeGroups.observe() }.collectAsState(initial = null)
+    // groups are keyed by their oldest hike, which stays the same as new hikes join
+    var expanded by remember { mutableStateOf(setOf<Long>()) }
     var renaming by remember { mutableStateOf<HikeEntity?>(null) }
+    var namingRoute by remember { mutableStateOf<HikeListEntry.Group?>(null) }
     var deleting by remember { mutableStateOf<HikeEntity?>(null) }
     // a new hike ends the active one, so it is confirmed first
     var pendingStart by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -106,15 +114,33 @@ fun HikeListScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             active?.let { ActiveHikeCard(it, onOpenActive) }
-            if (hikes.isEmpty()) {
+            val list = entries
+            if (list == null) {
+                Box(Modifier.fillMaxWidth().weight(1f))
+            } else if (list.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     if (active == null) Text("No hikes yet. Press Start hike when you set off.", style = MaterialTheme.typography.bodyLarge)
                 }
             } else {
                 LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                    items(hikes, key = { it.id }) { hike ->
-                        HikeRow(hike, onClick = { onOpen(hike.id) }, onRename = { renaming = hike }, onExport = { onExport(hike) }, onSend = { onSend(hike) }, onDelete = { deleting = hike })
+                    @Composable
+                    fun hikeRow(hike: HikeEntity, indent: Boolean) {
+                        HikeRow(hike, indent, onClick = { onOpen(hike.id) }, onRename = { renaming = hike }, onExport = { onExport(hike) }, onSend = { onSend(hike) }, onDelete = { deleting = hike })
                         HorizontalDivider()
+                    }
+                    list.forEach { entry ->
+                        when (entry) {
+                            is HikeListEntry.Single -> item(key = "h${entry.hike.id}") { hikeRow(entry.hike, indent = false) }
+                            is HikeListEntry.Group -> {
+                                val groupKey = entry.hikes.last().id
+                                val open = groupKey in expanded
+                                item(key = "g$groupKey") {
+                                    RouteRow(entry, open, onClick = { expanded = if (open) expanded - groupKey else expanded + groupKey }, onName = { namingRoute = entry })
+                                    HorizontalDivider()
+                                }
+                                if (open) items(entry.hikes, key = { "h${it.id}" }) { hikeRow(it, indent = true) }
+                            }
+                        }
                     }
                 }
             }
@@ -141,6 +167,19 @@ fun HikeListScreen(
                 TextButton(enabled = name.isNotBlank(), onClick = { onRename(hike, name.trim()); renaming = null }) { Text("Save") }
             },
             dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+        )
+    }
+
+    namingRoute?.let { group ->
+        var name by remember(group.hikes.last().id) { mutableStateOf(group.name.orEmpty()) }
+        AlertDialog(
+            onDismissRequest = { namingRoute = null },
+            title = { Text("Name route") },
+            text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, placeholder = { Text("e.g. Home to work") }) },
+            confirmButton = {
+                TextButton(enabled = name.isNotBlank(), onClick = { onNameRoute(group.hikes, name.trim()); namingRoute = null }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { namingRoute = null }) { Text("Cancel") } },
         )
     }
 
@@ -179,10 +218,31 @@ private fun ActiveHikeCard(hike: ActiveHike, onClick: () -> Unit) {
 }
 
 @Composable
-private fun HikeRow(hike: HikeEntity, onClick: () -> Unit, onRename: () -> Unit, onExport: () -> Unit, onSend: () -> Unit, onDelete: () -> Unit) {
+private fun RouteRow(group: HikeListEntry.Group, open: Boolean, onClick: () -> Unit, onName: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 16.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = if (open) "Collapse" else "Expand")
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(group.name ?: "Unnamed route", fontWeight = FontWeight.SemiBold)
+            Text("${group.hikes.size} hikes · last ${Format.date(group.newest.startTime)}", style = MaterialTheme.typography.bodySmall)
+        }
+        Box {
+            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More") }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("Name route") }, onClick = { menu = false; onName() })
+            }
+        }
+    }
+}
+
+@Composable
+private fun HikeRow(hike: HikeEntity, indent: Boolean, onClick: () -> Unit, onRename: () -> Unit, onExport: () -> Unit, onSend: () -> Unit, onDelete: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = if (indent) 52.dp else 16.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {

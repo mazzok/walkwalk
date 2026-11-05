@@ -48,6 +48,7 @@ fun SettingsScreen(settings: AppSettings, onBack: () -> Unit) {
     val trackColor by settings.trackColor.collectAsState()
     val ghostMode by settings.ghostMode.collectAsState()
     val dropM by settings.ghostDropM.collectAsState()
+    val routeGroupM by settings.routeGroupM.collectAsState()
 
     Scaffold(
         topBar = {
@@ -109,6 +110,22 @@ fun SettingsScreen(settings: AppSettings, onBack: () -> Unit) {
                         selected = dropM == m,
                         enabled = ghostMode,
                         onClick = { settings.setGhostDropM(m) },
+                        label = { Text(if (m == 0) "Off" else "$m m") },
+                    )
+                }
+            }
+
+            Text("Group hikes on the same route", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 28.dp))
+            Text(
+                "Hikes whose tracks stay this close to each other all the way, in the same direction, are listed together.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppSettings.ROUTE_GROUP_OPTIONS.forEach { m ->
+                    FilterChip(
+                        selected = routeGroupM == m,
+                        onClick = { settings.setRouteGroupM(m) },
                         label = { Text(if (m == 0) "Off" else "$m m") },
                     )
                 }

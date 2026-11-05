@@ -37,6 +37,7 @@ class HikeRepository(private val db: WalkwalkDb) {
     suspend fun lastSegment(hikeId: Long): Int? = dao.lastSegment(hikeId)
     suspend fun setStatus(hikeId: Long, status: HikeStatus) = dao.setStatus(hikeId, status)
     suspend fun rename(hikeId: Long, name: String) = dao.rename(hikeId, name)
+    suspend fun nameRoute(hikeIds: List<Long>, name: String) = dao.setRouteName(hikeIds, name)
 
     suspend fun points(hikeId: Long): List<TrackPoint> = dao.points(hikeId).map { it.toPoint() }
     /** Finished timed hikes with at least 2 points, each with its earliest point. */
