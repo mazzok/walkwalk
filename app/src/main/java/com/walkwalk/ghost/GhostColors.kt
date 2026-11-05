@@ -19,7 +19,19 @@ private fun rgbDistance(a: Int, b: Int): Double {
 /** [count] ghost colors, skipping palette entries too close to [trackColor]; cycles when count exceeds the palette. */
 fun ghostColors(count: Int, trackColor: Int): List<Int> {
     if (count <= 0) return emptyList()
-    val usable = GHOST_PALETTE.filter { rgbDistance(it, trackColor) >= MIN_COLOR_DISTANCE }
-        .ifEmpty { GHOST_PALETTE }
+    val usable = usableColors(trackColor)
     return List(count) { usable[it % usable.size] }
 }
+
+/**
+ * Colours for the hikes [ids]: a hike in [kept] keeps its colour, the others take the usable palette entries
+ * no kept colour already holds, in order. With nothing kept this is [ghostColors].
+ */
+fun ghostColors(ids: List<Long>, kept: Map<Long, Int>, trackColor: Int): List<Int> {
+    val free = usableColors(trackColor).filter { it !in kept.values }.ifEmpty { usableColors(trackColor) }
+    var next = 0
+    return ids.map { kept[it] ?: free[next++ % free.size] }
+}
+
+private fun usableColors(trackColor: Int): List<Int> =
+    GHOST_PALETTE.filter { rgbDistance(it, trackColor) >= MIN_COLOR_DISTANCE }.ifEmpty { GHOST_PALETTE }

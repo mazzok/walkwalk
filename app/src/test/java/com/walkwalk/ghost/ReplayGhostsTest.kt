@@ -87,6 +87,14 @@ class ReplayGhostsTest {
     }
 
     @Test
+    fun keptColoursWinOverThePlaceInTheList() {
+        val kept = mapOf(2L to GHOST_PALETTE[5])
+        val views = replayGhostViews(listOf(ghost(1, null), ghost(2, null)), 10_000, 0xFFCC3333.toInt(), kept = kept)
+        assertEquals(GHOST_PALETTE[5], views.first { it.id == 2L }.colorArgb)
+        assertEquals(ghostColors(listOf(1L), kept, 0xFFCC3333.toInt()).single(), views.first { it.id == 1L }.colorArgb)
+    }
+
+    @Test
     fun finishedGhostStaysAtItsEnd() {
         val short = straightLine(1.0, 5_000, 5)
         val v = replayGhostViews(listOf(ghost(1, null, short)), 30_000, 0xFFCC3333.toInt()).single()

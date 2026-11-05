@@ -45,6 +45,7 @@ import com.walkwalk.share.importKind
 import com.walkwalk.ui.ActiveHike
 import com.walkwalk.ui.HikeListScreen
 import com.walkwalk.ui.RecordingScreen
+import com.walkwalk.ui.ReplayRoute
 import com.walkwalk.ui.ReplayScreen
 import com.walkwalk.ui.ReplayViewModel
 import com.walkwalk.ui.SettingsScreen
@@ -237,11 +238,29 @@ class MainActivity : ComponentActivity() {
                     trackColor = trackColor,
                 )
             }
-            composable("replay/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+            composable(
+                ReplayRoute.PATTERN,
+                arguments = listOf(
+                    navArgument("id") { type = NavType.LongType },
+                    navArgument("kept") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("atM") { type = NavType.StringType; nullable = true; defaultValue = null },
+                ),
+            ) { entry ->
                 val id = entry.arguments!!.getLong("id")
-                val vm = viewModel(key = "replay-$id") { ReplayViewModel(app.repository, id, app.settings) }
-                val trackColor by app.settings.trackColor.collectAsState()
-                ReplayScreen(vm, landmarksFor(id), onBack = { nav.popBackStack(LIST, inclusive = false) }, trackColor = trackColor, onCorrectAltitude = {
+                val kept = ReplayRoute.decodeKept(entry.arguments!!.getString("kept"))
+                val atM = ReplayRoute.decodeAtM(entry.arguments!!.getString("atM"))
+                val vm = viewModel(key = "replay-$id") {
+                    ReplayViewModel(app.repository, id, app.settings, kept = kept, startAtM = atM)
+                }
+                // read so a changed track colour recomposes; a switched replay keeps its own colour
+                val settingsColor by app.settings.trackColor.collectAsState()
+                val trackColor = if (kept.isEmpty()) settingsColor else vm.trackColor
+                ReplayScreen(
+                    vm, landmarksFor(id),
+                    // a switched replay goes back one step, to the replay it was switched from
+                    onBack = { if (kept.isEmpty()) nav.popBackStack(LIST, inclusive = false) else nav.popBackStack() },
+                    onSwitchToGhost = { nav.navigate(ReplayRoute.of(vm.switchTo(it))) },
+                    trackColor = trackColor, onCorrectAltitude = {
                     scope.launch {
                         val ok = app.corrector.correct(id)
                         vm.reload()

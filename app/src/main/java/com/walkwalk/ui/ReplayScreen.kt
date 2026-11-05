@@ -21,6 +21,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -51,7 +53,10 @@ import com.walkwalk.ui.landmarks.LandmarksViewModel
 
 /** Replay layout B: full-screen map, floating numbers at the top, profile and scrubber at the bottom. */
 @Composable
-fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () -> Unit, onCorrectAltitude: () -> Unit, trackColor: Int) {
+fun ReplayScreen(
+    vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () -> Unit, onCorrectAltitude: () -> Unit, trackColor: Int,
+    onSwitchToGhost: (Long) -> Unit,
+) {
     val hike by vm.hike.collectAsState()
     val points by vm.points.collectAsState()
     val frame by vm.frame.collectAsState()
@@ -67,6 +72,7 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
     val showArrows by vm.showArrows.collectAsState()
     val ghostViews by vm.ghostViews.collectAsState()
     val shownTrails by vm.shownTrails.collectAsState()
+    val openTrails by vm.openTrails.collectAsState()
     val ghostHeatmaps by vm.ghostHeatmaps.collectAsState()
     val heatRange by vm.heatRange.collectAsState()
     var expanded by remember { mutableStateOf(false) }
@@ -162,7 +168,8 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
                     Column(Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp)) {
                         ghostViews.forEach { g ->
                             Row(
-                                Modifier.fillMaxWidth().clickable { vm.toggleTrail(g.id) }.padding(vertical = 4.dp),
+                                // the row switches to the ghost's replay; the eye shows or hides its trail
+                                Modifier.fillMaxWidth().clickable { onSwitchToGhost(g.id) },
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -170,6 +177,14 @@ fun ReplayScreen(vm: ReplayViewModel, landmarks: LandmarksViewModel, onBack: () 
                                 Text(g.name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 g.finishedMs?.let { Text("finished · ${Format.duration(it)}", style = MaterialTheme.typography.bodySmall) }
                                 g.deltaMs?.let { Text(Format.delta(it), style = MaterialTheme.typography.bodySmall) }
+                                val open = g.id in openTrails
+                                IconButton(onClick = { vm.toggleTrail(g.id) }, modifier = Modifier.size(32.dp)) {
+                                    Icon(
+                                        if (open) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = if (open) "Hide trail" else "Show trail",
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
                             }
                         }
                     }

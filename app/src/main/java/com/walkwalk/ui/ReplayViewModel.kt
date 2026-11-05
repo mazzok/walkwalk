@@ -15,6 +15,7 @@ import com.walkwalk.domain.Stop
 import com.walkwalk.domain.TrackPoint
 import com.walkwalk.ghost.GhostView
 import com.walkwalk.ghost.ReplayGhost
+import com.walkwalk.ghost.ghostColors
 import com.walkwalk.ghost.loadReplayGhosts
 import com.walkwalk.ghost.replayGhostViews
 import com.walkwalk.map.GhostTrail
@@ -32,13 +33,25 @@ import kotlinx.coroutines.withContext
 /** Altitude-vs-distance data for the elevation profile. Stops are given as distance positions. */
 data class Profile(val distances: DoubleArray, val altitudes: DoubleArray, val stopDistances: List<Double>)
 
+/** Replay [hikeId] from [atM] on, every hike in [kept] keeping the colour it had in the replay switched from. */
+data class ReplaySwitch(val hikeId: Long, val kept: Map<Long, Int>, val atM: Double)
+
+/**
+ * [kept] and [startAtM] are set when this replay was switched to from another one (see [switchTo]):
+ * the colours hikes had there, and the distance to open at.
+ */
 class ReplayViewModel(
     private val repo: HikeRepository,
     private val hikeId: Long,
     private val settings: AppSettings,
     private val ghostLoader: suspend (HikeRepository, Long, List<TrackPoint>, Int) -> List<ReplayGhost> = ::loadReplayGhosts,
     private val ghostDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val kept: Map<Long, Int> = emptyMap(),
+    private var startAtM: Double? = null,
 ) : ViewModel() {
+    /** The replayed hike's colour: its own from the replay switched from, else the track colour. */
+    val trackColor: Int get() = kept[hikeId] ?: settings.trackColor.value
+
     private val _hike = MutableStateFlow<HikeEntity?>(null)
     val hike: StateFlow<HikeEntity?> = _hike
     private val _points = MutableStateFlow<List<TrackPoint>>(emptyList())
@@ -109,7 +122,9 @@ class ReplayViewModel(
             _arrows.value = AccelArrows.of(pts, stops)
             timeline = ReplayTimeline(pts, stops)
             _canPlay.value = h.hasTimes && durationMs > 0
-            seek(_replayMs.value)
+            val at = startAtM
+            startAtM = null
+            if (at != null) seekToDistance(at) else seek(_replayMs.value)
             if (ghostsEnabled) loadGhosts(pts)
         }
     }
@@ -135,8 +150,15 @@ class ReplayViewModel(
         _frame.value?.let { refreshGhosts(it) }
     }
 
+    /** Where to go to replay ghost [ghostId] instead, at the distance this replay has come. */
+    fun switchTo(ghostId: Long): ReplaySwitch {
+        val ids = ghosts.map { it.id }
+        val colors = ids.zip(ghostColors(ids, kept, settings.trackColor.value)).toMap()
+        return ReplaySwitch(ghostId, kept + colors + (hikeId to trackColor), _frame.value?.distanceM ?: 0.0)
+    }
+
     private fun refreshGhosts(f: ReplayFrame) {
-        val views = replayGhostViews(ghosts, f.activeMs, settings.trackColor.value, f.distanceM)
+        val views = replayGhostViews(ghosts, f.activeMs, settings.trackColor.value, f.distanceM, kept)
         _ghostViews.value = views
         val shown = views.filter { it.id in _openTrails.value }
         val ids = shown.map { it.id }

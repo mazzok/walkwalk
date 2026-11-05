@@ -38,4 +38,21 @@ class GhostColorsTest {
     @Test fun zeroCountIsEmpty() {
         assertTrue(ghostColors(0, DEFAULT_TRACK_COLOR).isEmpty())
     }
+
+    @Test fun withoutKeptColorsTheSameAsGhostColors() {
+        assertEquals(ghostColors(3, DEFAULT_TRACK_COLOR), ghostColors(listOf(5L, 6L, 7L), emptyMap(), DEFAULT_TRACK_COLOR))
+    }
+
+    @Test fun keptColorsStayAndNewOnesSkipThem() {
+        val usable = ghostColors(8, DEFAULT_TRACK_COLOR)
+        // hike 1 was the replayed one, hike 2 a ghost in the first colour; hike 9 is new in this view
+        val kept = mapOf(1L to DEFAULT_TRACK_COLOR, 2L to usable[0])
+        assertEquals(listOf(DEFAULT_TRACK_COLOR, usable[0], usable[1]), ghostColors(listOf(1L, 2L, 9L), kept, DEFAULT_TRACK_COLOR))
+    }
+
+    @Test fun aKeptColorOfAHikeNotInTheListIsStillTaken() {
+        val usable = ghostColors(8, DEFAULT_TRACK_COLOR)
+        // hike 2 is now the replayed hike, so it is not in the ghost list but keeps its colour
+        assertEquals(listOf(usable[1]), ghostColors(listOf(9L), mapOf(2L to usable[0]), DEFAULT_TRACK_COLOR))
+    }
 }

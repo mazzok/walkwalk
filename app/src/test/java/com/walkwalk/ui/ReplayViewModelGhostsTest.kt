@@ -191,6 +191,39 @@ class ReplayViewModelGhostsTest {
     }
 
     @Test
+    fun switchingToAGhostCarriesEveryColourAndTheDistance() = runTest {
+        val a = record(fastRoute, start = 1)
+        record(straightLine(2.0, 2_000, 600), start = 2)
+        val me = record(walk)
+        val vm = replay(me)
+        vm.seek(300_000)
+        val colors = vm.ghostViews.value.associate { it.id to it.colorArgb }
+        val s = vm.switchTo(a)
+        assertEquals(a, s.hikeId)
+        assertEquals(vm.frame.value!!.distanceM, s.atM, 1e-9)
+        assertEquals(colors + (me to settings.trackColor.value), s.kept)
+    }
+
+    @Test
+    fun aSwitchedReplayKeepsTheColoursAndStartsAtTheDistance() = runTest {
+        val a = record(fastRoute, start = 1)
+        val b = record(straightLine(2.0, 2_000, 600), start = 2)
+        val me = record(walk)
+        val kept = mapOf(me to settings.trackColor.value, a to 0xFF00897B.toInt(), b to 0xFFF9A825.toInt())
+        val vm = ReplayViewModel(repo, a, settings, ghostDispatcher = Dispatchers.Main, kept = kept, startAtM = 900.0)
+            .also { advanceUntilIdle() }
+        assertEquals(0xFF00897B.toInt(), vm.trackColor)
+        assertEquals(900.0, vm.frame.value!!.distanceM, 10.0)
+        assertEquals(mapOf(me to settings.trackColor.value, b to 0xFFF9A825.toInt()), vm.ghostViews.value.associate { it.id to it.colorArgb })
+    }
+
+    @Test
+    fun anOpenedReplayUsesTheTrackColour() = runTest {
+        val vm = replay(record(walk))
+        assertEquals(settings.trackColor.value, vm.trackColor)
+    }
+
+    @Test
     fun aGhostWithoutMovingEdgesDoesNotPullTheRangeToZero() = runTest {
         // a stationary old hike of the same place: all fixes in one spot
         record((0 until 10).map { com.walkwalk.domain.p(it * 20_000L) }, start = 1)
