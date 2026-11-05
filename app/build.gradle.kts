@@ -68,6 +68,9 @@ android {
     }
 }
 
+val robolectricSdk34: Configuration by configurations.creating
+val robolectricSdk35: Configuration by configurations.creating
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -92,4 +95,24 @@ dependencies {
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+
+    // sdk=34 from robolectric.properties, and 35 (targetSdk) which Robolectric loads the app package with.
+    // Two configurations, as one would resolve the two versions of the same module down to the newer one.
+    robolectricSdk34("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7") { isTransitive = false }
+    robolectricSdk35("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7") { isTransitive = false }
+}
+
+// Robolectric would download its Android runtimes itself at test time, outside Gradle's cache and retries,
+// so one network hiccup fails every Robolectric test in CI. Gradle fetches them instead, into one folder,
+// and Robolectric runs offline against it.
+val robolectricRuntimeDir = layout.buildDirectory.dir("robolectric-runtime")
+val syncRobolectricRuntime by tasks.registering(Sync::class) {
+    from(robolectricSdk34, robolectricSdk35)
+    into(robolectricRuntimeDir)
+}
+
+tasks.withType<Test>().configureEach {
+    dependsOn(syncRobolectricRuntime)
+    systemProperty("robolectric.offline", "true")
+    systemProperty("robolectric.dependency.dir", robolectricRuntimeDir.get().asFile.absolutePath)
 }
